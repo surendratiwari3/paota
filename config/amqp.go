@@ -16,4 +16,5 @@ type AMQPConfig struct {
 	PrefetchCount    int              `env:"PREFETCH_COUNT"`
 	AutoDelete       bool             `env:"AUTO_DELETE"`
 	DelayedQueue     string           `env:"DELAYED_QUEUE"`
+	QueueName        string           `env:"QUEUE_NAME"`
 }

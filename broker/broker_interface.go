@@ -7,7 +7,7 @@ import (
 
 // Broker - a common interface for all brokers
 type Broker interface {
-	StartConsuming(consumerTag string, concurrency int) (bool, error)
-	StopConsuming()
+	StartConsuming(consumerTag string, concurrency int) error
+	StopConsuming() error
 	Enqueue(ctx context.Context, task *task.Signature) error
 }

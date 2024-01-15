@@ -7,3 +7,10 @@ type Config struct {
 	AMQP         *AMQPConfig    `envPrefix:"AMQP_"`
 	MongoDB      *MongoDBConfig `envPrefix:"MONGO_"`
 }
+
+type Consumer struct {
+	Tag         string `env:"CONSUMER_TAG"`
+	Concurrency int    `env:"Concurrency"`
+}
+
+var Conf = Config{}
