@@ -13,7 +13,7 @@ type Config struct {
 
 type Consumer struct {
 	Tag         string `env:"CONSUMER_TAG"`
-	Concurrency int    `env:"Concurrency"`
+	Concurrency int    `env:"CONCURRENCY"`
 }
 
 var Conf = Config{}
