@@ -17,6 +17,8 @@ type Signature struct {
 	UUID                        string
 	Name                        string
 	Args                        []Arg
+	RoutingKey                  string
+	Priority                    uint8
 	RetryCount                  int
 	RetryTimeout                int
 	IgnoreWhenTaskNotRegistered bool

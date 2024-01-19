@@ -8,6 +8,7 @@ type QueueDeclareArgs map[string]interface{}
 
 // AMQPConfig wraps RabbitMQ related configuration
 type AMQPConfig struct {
+	Url              string           `env:"URL"`
 	Exchange         string           `env:"EXCHANGE"`
 	ExchangeType     string           `env:"EXCHANGE_TYPE"`
 	QueueDeclareArgs QueueDeclareArgs `env:"QUEUE_DECLARE_ARGS"`
@@ -16,5 +17,4 @@ type AMQPConfig struct {
 	PrefetchCount    int              `env:"PREFETCH_COUNT"`
 	AutoDelete       bool             `env:"AUTO_DELETE"`
 	DelayedQueue     string           `env:"DELAYED_QUEUE"`
-	QueueName        string           `env:"QUEUE_NAME"`
 }
