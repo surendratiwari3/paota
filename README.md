@@ -3,7 +3,7 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 
 ## Architecture Diagram
 
-![Architecture Diagram](url_to_your_image_file)
+![Architecture Diagram](https://github.com/surendratiwari3/paota/blob/main/docs/images/paota_top_down.png)
 
 ## paota To-Do List
 
