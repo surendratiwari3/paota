@@ -22,13 +22,13 @@ type Worker struct {
 
 // NewWorker creates Worker instance
 func NewWorker(cnf *config.Config) (*Worker, error) {
-	broker, err := BrokerFactory(cnf)
+	broker, err := CreateBroker(cnf)
 	if err != nil {
 		return nil, err
 	}
 
 	// Backend is optional so we ignore the error
-	backend, err := StoreFactory(cnf)
+	backend, err := CreateStore(cnf)
 	if err != nil {
 		return nil, err
 	}

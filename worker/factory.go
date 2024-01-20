@@ -10,18 +10,18 @@ import (
 	nullStore "github.com/surendratiwari3/paota/store/null"
 )
 
-// BrokerFactory creates a new object of broker.Broker
-func BrokerFactory(cnf *config.Config) (broker.Broker, error) {
+// CreateBroker creates a new object of broker.Broker
+func CreateBroker(cnf *config.Config) (broker.Broker, error) {
 	switch cnf.Broker {
 	case "amqp":
-		return amqpBroker.NewBroker(cnf)
+		return amqpBroker.NewAMQPBroker(cnf)
 	default:
 		return nil, brokerErrors.ErrUnsupportedBroker
 	}
 }
 
-// StoreFactory creates a new object of store.Interface
-func StoreFactory(cnf *config.Config) (store.Backend, error) {
+// CreateStore creates a new object of store.Interface
+func CreateStore(cnf *config.Config) (store.Backend, error) {
 	switch cnf.Store {
 	case "null":
 		return nullStore.NewNullBackend(), nil

@@ -8,13 +8,15 @@ type QueueDeclareArgs map[string]interface{}
 
 // AMQPConfig wraps RabbitMQ related configuration
 type AMQPConfig struct {
-	Url              string           `env:"URL"`
-	Exchange         string           `env:"EXCHANGE"`
-	ExchangeType     string           `env:"EXCHANGE_TYPE"`
-	QueueDeclareArgs QueueDeclareArgs `env:"QUEUE_DECLARE_ARGS"`
-	QueueBindingArgs QueueBindingArgs `env:"QUEUE_BINDING_ARGS"`
-	BindingKey       string           `env:"BINDING_KEY"`
-	PrefetchCount    int              `env:"PREFETCH_COUNT"`
-	AutoDelete       bool             `env:"AUTO_DELETE"`
-	DelayedQueue     string           `env:"DELAYED_QUEUE"`
+	Url                string           `env:"URL"`
+	Exchange           string           `env:"EXCHANGE"`
+	ExchangeType       string           `env:"EXCHANGE_TYPE"`
+	QueueDeclareArgs   QueueDeclareArgs `env:"QUEUE_DECLARE_ARGS"`
+	QueueBindingArgs   QueueBindingArgs `env:"QUEUE_BINDING_ARGS"`
+	BindingKey         string           `env:"BINDING_KEY"`
+	PrefetchCount      int              `env:"PREFETCH_COUNT"`
+	AutoDelete         bool             `env:"AUTO_DELETE"`
+	DelayedQueue       string           `env:"DELAYED_QUEUE"`
+	ConnectionPoolSize int              `env:"CONNECTION_POOL_SIZE"`
+	HeartBeatInterval  int              `env:"HEARTBEAT_INTERVAL"`
 }
