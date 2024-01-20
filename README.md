@@ -1,6 +1,10 @@
 # paota (WorkInProgress)
 An efficient Go task queue package, facilitating the seamless orchestration and execution of tasks. Alternative to machinery and Celery.
 
+## Architecture Diagram
+
+![Architecture Diagram](url_to_your_image_file)
+
 ## paota To-Do List
 
 ### In Progress
