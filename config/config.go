@@ -11,9 +11,9 @@ var (
 
 // Config holds all configuration for Paota
 type Config struct {
-	Broker         string         `env:"BROKER" envDefault:"amqp"` //allowed amqp
+	Broker         string         `env:"BROKER" envDefault:"amqp" validate:"required,oneof=amqp"` //allowed amqp
 	Store          string         `env:"STORE"`
-	TaskQueueName  string         `env:"QUEUE_NAME" envDefault:"paota_tasks"`
+	TaskQueueName  string         `env:"QUEUE_NAME" envDefault:"paota_tasks" validate:"required"`
 	StoreQueueName string         `env:"STORE_QUEUE_NAME"`
 	AMQP           *AMQPConfig    `envPrefix:"AMQP_"`
 	MongoDB        *MongoDBConfig `envPrefix:"MONGO_"`
@@ -41,6 +41,7 @@ func ValidateConfig(cfg Config) error {
 	if err := validate.Struct(cfg); err != nil {
 		return err
 	}
+
 	return nil
 }
 

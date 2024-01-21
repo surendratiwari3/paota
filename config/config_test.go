@@ -8,7 +8,7 @@ import (
 
 func TestReadFromEnv(t *testing.T) {
 	// Set environment variables for testing
-	os.Setenv("PAOTA_BROKER", "test_broker")
+	os.Setenv("PAOTA_BROKER", "amqp")
 
 	// Test ReadFromEnv function
 	err := ReadFromEnv()
@@ -48,4 +48,38 @@ func TestGetConfig(t *testing.T) {
 	assert.Equal(t, "mongodb", config.Store)
 	assert.Equal(t, "test_queue", config.TaskQueueName)
 	assert.Equal(t, "test_store_queue", config.StoreQueueName)
+}
+
+func TestEmptyGetConfig(t *testing.T) {
+	applicationConfig = Config{}
+	// Test GetConfig function
+	config := GetConfig()
+
+	// Assert that the returned config is nil
+	assert.Nil(t, config)
+}
+
+func TestValidateConfig_InvalidConfig(t *testing.T) {
+	// Create an invalid configuration for testing (missing required field)
+	invalidConfig := Config{
+		Broker: "amqp1",
+	}
+
+	// Test ValidateConfig function with an invalid configuration
+	err := ValidateConfig(invalidConfig)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "required")
+	assert.Contains(t, err.Error(), "oneof")
+}
+
+func TestValidateConfig_validConfig(t *testing.T) {
+	// Create an invalid configuration for testing (missing required field)
+	invalidConfig := Config{
+		Broker:        "amqp",
+		TaskQueueName: "test",
+	}
+
+	// Test ValidateConfig function with an invalid configuration
+	err := ValidateConfig(invalidConfig)
+	assert.Nil(t, err)
 }
