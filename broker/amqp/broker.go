@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/surendratiwari3/paota/broker/errors"
 	"sync"
 	"time"
 
@@ -48,7 +49,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 	if err != nil {
 		return err
 	}
-	defer b.releaseConnection(conn)
+	defer b.releaseConnectionToPool(conn)
 
 	// Create a channel
 	channel, err := conn.Channel()
@@ -148,8 +149,8 @@ func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
 	b.connectionsMutex.Lock()
 	defer b.connectionsMutex.Unlock()
 
-	if b.ConnectionPool != nil && len(b.ConnectionPool) == 0 {
-		return nil, fmt.Errorf("connection pool is empty")
+	if b.ConnectionPool == nil || len(b.ConnectionPool) == 0 {
+		return nil, errors.ErrConnectionPoolEmpty
 	}
 
 	conn := b.ConnectionPool[0]
@@ -159,7 +160,7 @@ func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
 }
 
 // releaseConnection releases a connection back to the pool
-func (b *AMQPBroker) releaseConnection(conn *amqp.Connection) {
+func (b *AMQPBroker) releaseConnectionToPool(conn *amqp.Connection) {
 	b.connectionsMutex.Lock()
 	defer b.connectionsMutex.Unlock()
 
