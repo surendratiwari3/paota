@@ -22,6 +22,9 @@ func (a *AMQPAdapter) CloseConnection() error {
 }
 
 func NewAMQPAdapter() Adapter {
+	if config.GetConfig() == nil || config.GetConfig().AMQP == nil {
+		return nil
+	}
 	amqpConfig := config.GetConfig().AMQP
 	return &AMQPAdapter{amqpConfig: amqpConfig}
 }
