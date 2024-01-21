@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/caarlos0/env/v10"
+	"github.com/go-playground/validator/v10"
 )
 
 var (
@@ -18,17 +19,26 @@ type Config struct {
 	MongoDB        *MongoDBConfig `envPrefix:"MONGO_"`
 }
 
-type Consumer struct {
-	Tag         string `env:"CONSUMER_TAG" envDefault:"paota_worker"`
-	Concurrency int    `env:"CONCURRENCY" envDefault:"10"`
-}
-
 func ReadFromEnv() error {
 	envOpts := env.Options{
 		Prefix: "PAOTA_",
 	}
 	err := env.ParseWithOptions(&applicationConfig, envOpts)
 	if err != nil {
+		return err
+	}
+	if err = ValidateConfig(applicationConfig); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ValidateConfig validates the configuration.
+func ValidateConfig(cfg Config) error {
+	// Use the validator package to perform validations
+	validate := validator.New()
+	if err := validate.Struct(cfg); err != nil {
 		return err
 	}
 	return nil
