@@ -4,20 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/surendratiwari3/paota/broker/errors"
-	"sync"
-	"time"
-
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/surendratiwari3/paota/adapter"
 	"github.com/surendratiwari3/paota/broker"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/task"
+	"sync"
 )
 
 // AMQPBroker represents an AMQP broker
 type AMQPBroker struct {
 	Config           *config.Config
-	ConnectionPool   []*amqp.Connection
+	amqpAdapter      adapter.Adapter
 	connectionsMutex sync.Mutex
 }
 
@@ -49,7 +47,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 	if err != nil {
 		return err
 	}
-	defer b.releaseConnectionToPool(conn)
+	defer b.amqpAdapter.ReleaseConnectionToPool(conn)
 
 	// Create a channel
 	channel, err := conn.Channel()
@@ -96,8 +94,10 @@ func NewAMQPBroker(cfg *config.Config) (broker.Broker, error) {
 		connectionsMutex: sync.Mutex{},
 	}
 
-	// Initialize the connection pool
-	if err := amqpBroker.initConnectionPool(); err != nil {
+	amqpBroker.amqpAdapter = adapter.NewAMQPAdapter(cfg.AMQP)
+
+	err := amqpBroker.amqpAdapter.CreateConnectionPool()
+	if err != nil {
 		return nil, err
 	}
 
@@ -107,64 +107,6 @@ func NewAMQPBroker(cfg *config.Config) (broker.Broker, error) {
 	}
 
 	return amqpBroker, nil
-}
-
-// initConnectionPool initializes the connection pool
-func (b *AMQPBroker) initConnectionPool() error {
-	poolSize := b.Config.AMQP.ConnectionPoolSize
-	if poolSize < 2 {
-		return nil
-	}
-	connPool := make([]*amqp.Connection, poolSize)
-
-	for i := 0; i < poolSize; i++ {
-		conn, err := b.createConnection()
-		if err != nil {
-			return err
-		}
-
-		connPool[i] = conn
-	}
-	b.ConnectionPool = connPool
-
-	return nil
-}
-
-// createConnection creates a new AMQP connection
-func (b *AMQPBroker) createConnection() (*amqp.Connection, error) {
-	conn, err := amqp.DialConfig(b.Config.AMQP.Url,
-		amqp.Config{
-			Heartbeat: time.Duration(b.Config.AMQP.HeartBeatInterval), // Adjust heartbeat interval as needed
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return conn, nil
-}
-
-// getConnection returns a connection from the pool
-func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
-	b.connectionsMutex.Lock()
-	defer b.connectionsMutex.Unlock()
-
-	if b.ConnectionPool == nil || len(b.ConnectionPool) == 0 {
-		return nil, errors.ErrConnectionPoolEmpty
-	}
-
-	conn := b.ConnectionPool[0]
-	b.ConnectionPool = b.ConnectionPool[1:]
-
-	return conn, nil
-}
-
-// releaseConnection releases a connection back to the pool
-func (b *AMQPBroker) releaseConnectionToPool(conn *amqp.Connection) {
-	b.connectionsMutex.Lock()
-	defer b.connectionsMutex.Unlock()
-
-	b.ConnectionPool = append(b.ConnectionPool, conn)
 }
 
 // isDirectExchange checks if the exchange type is direct
@@ -184,10 +126,6 @@ func (b *AMQPBroker) getRoutingKey() string {
 // setupExchangeQueueBinding sets up the exchange, queue, and binding
 func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	amqpConn, err := b.getConnection()
-	if err != nil {
-		return err
-	}
-
 	channel, err := amqpConn.Channel()
 	if err != nil {
 		return err
@@ -234,4 +172,15 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	}
 
 	return nil
+}
+
+func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
+	amqpConn, err := b.amqpAdapter.GetConnectionFromPool()
+	if err != nil {
+		return nil, err
+	}
+	if amqpConnection, ok := amqpConn.(*amqp.Connection); ok {
+		return amqpConnection, nil
+	}
+	return nil, nil
 }
