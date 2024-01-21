@@ -88,13 +88,14 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 // NewAMQPBroker creates a new instance of the AMQP broker
 // It opens connections to RabbitMQ, declares an exchange, opens a channel,
 // declares and binds the queue, and enables publish notifications
-func NewAMQPBroker(cfg *config.Config) (broker.Broker, error) {
+func NewAMQPBroker() (broker.Broker, error) {
+	cfg := config.GetConfig()
 	amqpBroker := &AMQPBroker{
 		Config:           cfg,
 		connectionsMutex: sync.Mutex{},
 	}
 
-	amqpBroker.amqpAdapter = adapter.NewAMQPAdapter(cfg.AMQP)
+	amqpBroker.amqpAdapter = adapter.NewAMQPAdapter()
 
 	err := amqpBroker.amqpAdapter.CreateConnectionPool()
 	if err != nil {

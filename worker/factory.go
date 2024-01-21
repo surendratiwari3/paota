@@ -7,14 +7,13 @@ import (
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/store"
 	storeErrors "github.com/surendratiwari3/paota/store/errors"
-	nullStore "github.com/surendratiwari3/paota/store/null"
 )
 
 // CreateBroker creates a new object of broker.Broker
 func CreateBroker(cnf *config.Config) (broker.Broker, error) {
 	switch cnf.Broker {
 	case "amqp":
-		return amqpBroker.NewAMQPBroker(cnf)
+		return amqpBroker.NewAMQPBroker()
 	default:
 		return nil, brokerErrors.ErrUnsupportedBroker
 	}
@@ -23,8 +22,6 @@ func CreateBroker(cnf *config.Config) (broker.Broker, error) {
 // CreateStore creates a new object of store.Interface
 func CreateStore(cnf *config.Config) (store.Backend, error) {
 	switch cnf.Store {
-	case "null":
-		return nullStore.NewNullBackend(), nil
 	default:
 		return nil, storeErrors.ErrUnsupportedStore
 	}

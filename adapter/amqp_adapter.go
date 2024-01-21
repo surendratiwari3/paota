@@ -21,7 +21,8 @@ func (a *AMQPAdapter) CloseConnection() error {
 	return nil
 }
 
-func NewAMQPAdapter(amqpConfig *config.AMQPConfig) Adapter {
+func NewAMQPAdapter() Adapter {
+	amqpConfig := config.GetConfig().AMQP
 	return &AMQPAdapter{amqpConfig: amqpConfig}
 }
 
