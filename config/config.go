@@ -1,3 +1,5 @@
+// config.go
+
 package config
 
 import (
@@ -5,9 +7,12 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-var (
-	applicationConfig Config
-)
+// ConfigProvider is an interface for retrieving configuration.
+type ConfigProvider interface {
+	ReadFromEnv() error
+	ValidateConfig(cfg Config) error
+	GetConfig() *Config
+}
 
 // Config holds all configuration for Paota
 type Config struct {
@@ -19,23 +24,35 @@ type Config struct {
 	MongoDB        *MongoDBConfig `envPrefix:"MONGO_"`
 }
 
-func ReadFromEnv() error {
+type configProvider struct {
+	applicationConfig Config
+}
+
+var (
+	globalConfigProvider ConfigProvider
+)
+
+// NewConfigProvider creates a new instance of ConfigProvider.
+func NewConfigProvider() ConfigProvider {
+	return &configProvider{}
+}
+
+func (cp *configProvider) ReadFromEnv() error {
 	envOpts := env.Options{
 		Prefix: "PAOTA_",
 	}
-	err := env.ParseWithOptions(&applicationConfig, envOpts)
+	err := env.ParseWithOptions(&cp.applicationConfig, envOpts)
 	if err != nil {
 		return err
 	}
-	if err = ValidateConfig(applicationConfig); err != nil {
+	if err = cp.ValidateConfig(cp.applicationConfig); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// ValidateConfig validates the configuration.
-func ValidateConfig(cfg Config) error {
+func (cp *configProvider) ValidateConfig(cfg Config) error {
 	// Use the validator package to perform validations
 	validate := validator.New()
 	if err := validate.Struct(cfg); err != nil {
@@ -45,10 +62,24 @@ func ValidateConfig(cfg Config) error {
 	return nil
 }
 
-func GetConfig() *Config {
+func (cp *configProvider) GetConfig() *Config {
 	emptyStruct := Config{}
-	if applicationConfig == emptyStruct {
+	if cp.applicationConfig == emptyStruct {
 		return nil
 	}
-	return &applicationConfig
+	return &cp.applicationConfig
+}
+
+// SetConfigProvider sets the global configuration provider.
+// This is useful for injecting custom configurations during tests.
+func SetConfigProvider(provider ConfigProvider) {
+	globalConfigProvider = provider
+}
+
+// GetConfigProvider returns the global configuration provider.
+func GetConfigProvider() ConfigProvider {
+	if globalConfigProvider == nil {
+		globalConfigProvider = NewConfigProvider()
+	}
+	return globalConfigProvider
 }

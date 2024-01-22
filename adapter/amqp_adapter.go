@@ -1,9 +1,10 @@
 package adapter
 
 import (
+	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/surendratiwari3/paota/broker/errors"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/errors"
 	"sync"
 	"time"
 )
@@ -22,14 +23,19 @@ func (a *AMQPAdapter) CloseConnection() error {
 }
 
 func NewAMQPAdapter() Adapter {
-	if config.GetConfig() == nil || config.GetConfig().AMQP == nil {
+	if config.GetConfigProvider() == nil ||
+		config.GetConfigProvider().GetConfig() == nil ||
+		config.GetConfigProvider().GetConfig().AMQP == nil {
 		return nil
 	}
-	amqpConfig := config.GetConfig().AMQP
+	amqpConfig := config.GetConfigProvider().GetConfig().AMQP
 	return &AMQPAdapter{amqpConfig: amqpConfig}
 }
 
 func (a *AMQPAdapter) CreateConnection() (*amqp.Connection, error) {
+	if a.amqpConfig == nil {
+		return nil, errors.ErrNilConfig
+	}
 	conn, err := amqp.DialConfig(a.amqpConfig.Url,
 		amqp.Config{
 			Heartbeat: time.Duration(a.amqpConfig.HeartBeatInterval), // Adjust heartbeat interval as needed
@@ -46,8 +52,9 @@ func (a *AMQPAdapter) CreateConnection() (*amqp.Connection, error) {
 func (a *AMQPAdapter) CreateConnectionPool() error {
 	poolSize := a.amqpConfig.ConnectionPoolSize
 	if poolSize < 2 {
-		return nil
+		return errors.ErrInvalidConfig
 	}
+	fmt.Println("we are here")
 	connPool := make([]*amqp.Connection, poolSize)
 
 	for i := 0; i < poolSize; i++ {

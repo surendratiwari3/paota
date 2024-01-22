@@ -11,11 +11,11 @@ func TestReadFromEnv(t *testing.T) {
 	os.Setenv("PAOTA_BROKER", "amqp")
 
 	// Test ReadFromEnv function
-	err := ReadFromEnv()
+	err := GetConfigProvider().ReadFromEnv()
 	assert.NoError(t, err)
 
 	// Test GetConfig function after ReadFromEnv
-	config := GetConfig()
+	config := GetConfigProvider().GetConfig()
 	assert.NotNil(t, config)
 }
 
@@ -34,11 +34,11 @@ func TestGetConfig(t *testing.T) {
 		os.Unsetenv("PAOTA_STORE_QUEUE_NAME")
 	}()
 
-	err := ReadFromEnv()
+	err := GetConfigProvider().ReadFromEnv()
 	assert.NoError(t, err)
 
 	// Test GetConfig function
-	config := GetConfig()
+	config := GetConfigProvider().GetConfig()
 
 	// Assert that the returned config is not nil
 	assert.NotNil(t, config)
@@ -51,9 +51,10 @@ func TestGetConfig(t *testing.T) {
 }
 
 func TestEmptyGetConfig(t *testing.T) {
-	applicationConfig = Config{}
+	SetConfigProvider(NewConfigProvider())
+
 	// Test GetConfig function
-	config := GetConfig()
+	config := GetConfigProvider().GetConfig()
 
 	// Assert that the returned config is nil
 	assert.Nil(t, config)
@@ -66,7 +67,7 @@ func TestValidateConfig_InvalidConfig(t *testing.T) {
 	}
 
 	// Test ValidateConfig function with an invalid configuration
-	err := ValidateConfig(invalidConfig)
+	err := GetConfigProvider().ValidateConfig(invalidConfig)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "required")
 	assert.Contains(t, err.Error(), "oneof")
@@ -80,6 +81,6 @@ func TestValidateConfig_validConfig(t *testing.T) {
 	}
 
 	// Test ValidateConfig function with an invalid configuration
-	err := ValidateConfig(invalidConfig)
+	err := GetConfigProvider().ValidateConfig(invalidConfig)
 	assert.Nil(t, err)
 }

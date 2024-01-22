@@ -89,7 +89,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 // It opens connections to RabbitMQ, declares an exchange, opens a channel,
 // declares and binds the queue, and enables publish notifications
 func NewAMQPBroker() (broker.Broker, error) {
-	cfg := config.GetConfig()
+	cfg := config.GetConfigProvider().GetConfig()
 	amqpBroker := &AMQPBroker{
 		Config:           cfg,
 		connectionsMutex: sync.Mutex{},
