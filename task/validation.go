@@ -1,7 +1,7 @@
 package task
 
 import (
-	"github.com/surendratiwari3/paota/task/errors"
+	"github.com/surendratiwari3/paota/errors"
 	"reflect"
 )
 
