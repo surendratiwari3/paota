@@ -48,3 +48,6 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 - RabbitMQ (installation guide: https://www.rabbitmq.com/download.html)
 - MongoDB (installation guide: https://docs.mongodb.com/manual/installation/) - optional (if result backend in mongodb)
 
+### Mocks for this repository are generated using mockery(v2)
+mockery --all --output=mocks
+
