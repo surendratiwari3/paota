@@ -11,10 +11,10 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 - [ ] Update documentation for new features.
 - [ ] Publish to amqp broker
 - [ ] Consumer from amqp broker
+- [ ] Unit test and code coverage
 
 ### Planned
 - [ ] UI/UX for better engagement.
-- [ ] Add unit tests.
 - [ ] Scheduled task
 - [ ] Release first version 1.0.0.
 
