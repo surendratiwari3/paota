@@ -1,6 +1,7 @@
 package amqp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"github.com/surendratiwari3/paota/adapter"
 	"github.com/surendratiwari3/paota/broker"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/errors"
+	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/task"
 	"sync"
 )
@@ -15,6 +18,8 @@ import (
 // AMQPBroker represents an AMQP broker
 type AMQPBroker struct {
 	Config           *config.Config
+	taskChannel      chan task.Job
+	ackChannel       chan uint64
 	amqpAdapter      adapter.Adapter
 	connectionsMutex sync.Mutex
 }
@@ -22,9 +27,61 @@ type AMQPBroker struct {
 // StartConsumer initializes the AMQP consumer
 func (b *AMQPBroker) StartConsumer(consumerTag string, concurrency int) error {
 	// TODO: Implement consumer setup (if needed)
-	/*
-		queueName := config.Conf.AMQP.QueueName
-	*/
+
+	queueName := config.GetConfigProvider().GetConfig().TaskQueueName
+	if queueName == "" {
+		return errors.ErrInvalidConfig
+	}
+
+	conn, err := b.getConnection()
+	if err != nil {
+		return err
+	}
+	defer func(amqpAdapter adapter.Adapter, i interface{}) {
+		err := amqpAdapter.ReleaseConnectionToPool(i)
+		if err != nil {
+			//TODO:error handling
+		}
+	}(b.amqpAdapter, conn)
+
+	// Create a channel
+	channel, err := conn.Channel()
+	if err != nil {
+		return err
+	}
+	defer func(channel *amqp.Channel) {
+		err := channel.Close()
+		if err != nil {
+			//TODO:error handling
+		}
+	}(channel)
+
+	// Channel QOS
+	if err = channel.Qos(
+		config.GetConfigProvider().GetConfig().AMQP.PrefetchCount,
+		0,     // prefetch size
+		false, // global
+	); err != nil {
+		return err
+	}
+
+	deliveries, err := channel.Consume(
+		queueName,   // queue
+		consumerTag, // consumer tag
+		false,       // auto-ack
+		false,       // exclusive
+		false,       // no-local
+		false,       // no-wait
+		nil,         // arguments
+	)
+	if err != nil {
+		return err
+	}
+
+	logger.ApplicationLogger.Info("[*] Waiting for messages. To exit press CTRL+C")
+
+	b.processDelivery(deliveries, nil)
+
 	return nil
 }
 
@@ -47,7 +104,12 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 	if err != nil {
 		return err
 	}
-	defer b.amqpAdapter.ReleaseConnectionToPool(conn)
+	defer func(amqpAdapter adapter.Adapter, i interface{}) {
+		err := amqpAdapter.ReleaseConnectionToPool(i)
+		if err != nil {
+			//TODO:error handling
+		}
+	}(b.amqpAdapter, conn)
 
 	// Create a channel
 	channel, err := conn.Channel()
@@ -57,7 +119,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 	defer func(channel *amqp.Channel) {
 		err := channel.Close()
 		if err != nil {
-			//TODO:
+			//TODO:error handling
 		}
 	}(channel)
 
@@ -88,7 +150,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 // NewAMQPBroker creates a new instance of the AMQP broker
 // It opens connections to RabbitMQ, declares an exchange, opens a channel,
 // declares and binds the queue, and enables publish notifications
-func NewAMQPBroker() (broker.Broker, error) {
+func NewAMQPBroker(taskChannel chan task.Job) (broker.Broker, error) {
 	cfg := config.GetConfigProvider().GetConfig()
 	amqpBroker := &AMQPBroker{
 		Config:           cfg,
@@ -131,7 +193,12 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-	defer channel.Close()
+	defer func(channel *amqp.Channel) {
+		err := channel.Close()
+		if err != nil {
+			//TODO: error handling
+		}
+	}(channel)
 
 	// Declare the exchange
 	err = channel.ExchangeDeclare(
@@ -184,4 +251,51 @@ func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
 		return amqpConnection, nil
 	}
 	return nil, nil
+}
+
+// consumerDeliveryHandler
+func (b *AMQPBroker) consumerDeliveryHandler(delivery amqp.Delivery) error {
+	if len(delivery.Body) == 0 {
+		delivery.Nack(true, false)    // multiple, requeue
+		return errors.ErrEmptyMessage // RabbitMQ down?
+	}
+
+	var multiple, requeue = false, false
+
+	// Unmarshal message body into signature struct
+	signature := new(task.Signature)
+	decoder := json.NewDecoder(bytes.NewReader(delivery.Body))
+	decoder.UseNumber()
+	if err := decoder.Decode(signature); err != nil {
+		delivery.Nack(multiple, requeue)
+		return err
+	}
+
+	job := task.Job{Tag: delivery.DeliveryTag, Signature: signature}
+	b.taskChannel <- job
+
+	return nil
+}
+
+func (b *AMQPBroker) processDelivery(deliveries <-chan amqp.Delivery, consumerErr chan error) {
+	for d := range deliveries {
+		//TODO: error handling
+		b.consumerDeliveryHandler(d)
+	}
+	err := fmt.Errorf("handle: deliveries channel closed")
+	if consumerErr != nil {
+		consumerErr <- err
+	}
+}
+
+func (b *AMQPBroker) processAck() {
+	go func() {
+		select {
+		case tag := <-b.ackChannel:
+			delivery := amqp.Delivery{
+				DeliveryTag: tag,
+			}
+			_ = delivery.Ack(false)
+		}
+	}()
 }

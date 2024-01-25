@@ -8,7 +8,7 @@ import (
 	"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
 	paotaTask "github.com/surendratiwari3/paota/task"
-	"github.com/surendratiwari3/paota/worker"
+	"github.com/surendratiwari3/paota/workerpool"
 	"os"
 )
 
@@ -26,7 +26,7 @@ func main() {
 		},
 	}
 	logger.ApplicationLogger = logrus.StandardLogger()
-	newWorker, err := worker.NewWorker(cnf)
+	newWorker, err := workerpool.NewWorker(cnf)
 	if err != nil {
 		logger.ApplicationLogger.Error("worker is not created", err)
 		os.Exit(0)
@@ -78,6 +78,5 @@ func main() {
 		},
 		IgnoreWhenTaskNotRegistered: true,
 	}
-
 	newWorker.SendTaskWithContext(context.Background(), store2Mongo)
 }

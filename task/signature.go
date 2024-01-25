@@ -12,6 +12,11 @@ type Arg struct {
 	Value interface{} `bson:"value"`
 }
 
+type Job struct {
+	Signature *Signature
+	Tag       uint64
+}
+
 // Signature represents a single task invocation
 type Signature struct {
 	UUID                        string

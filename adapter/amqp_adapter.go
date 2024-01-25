@@ -1,7 +1,6 @@
 package adapter
 
 import (
-	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/errors"
@@ -54,7 +53,6 @@ func (a *AMQPAdapter) CreateConnectionPool() error {
 	if poolSize < 2 {
 		return errors.ErrInvalidConfig
 	}
-	fmt.Println("we are here")
 	connPool := make([]*amqp.Connection, poolSize)
 
 	for i := 0; i < poolSize; i++ {

@@ -1,4 +1,4 @@
-package worker
+package workerpool
 
 import (
 	"github.com/surendratiwari3/paota/broker"
@@ -6,21 +6,24 @@ import (
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/errors"
 	"github.com/surendratiwari3/paota/store"
+	"github.com/surendratiwari3/paota/task"
 )
 
 // CreateBroker creates a new object of broker.Broker
-func CreateBroker(cnf *config.Config) (broker.Broker, error) {
-	switch cnf.Broker {
+func CreateBroker(taskChannel chan task.Job) (broker.Broker, error) {
+	brokerType := config.GetConfigProvider().GetConfig().Broker
+	switch brokerType {
 	case "amqp":
-		return amqpBroker.NewAMQPBroker()
+		return amqpBroker.NewAMQPBroker(taskChannel)
 	default:
 		return nil, errors.ErrUnsupportedBroker
 	}
 }
 
 // CreateStore creates a new object of store.Interface
-func CreateStore(cnf *config.Config) (store.Backend, error) {
-	switch cnf.Store {
+func CreateStore() (store.Backend, error) {
+	storeBackend := config.GetConfigProvider().GetConfig().Store
+	switch storeBackend {
 	default:
 		return nil, errors.ErrUnsupportedStore
 	}
