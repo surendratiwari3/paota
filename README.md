@@ -12,6 +12,7 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 - [ ] Publish to amqp broker
 - [ ] Consumer from amqp broker
 - [ ] Unit test and code coverage
+- [ ] WorkerPool
 
 ### Planned
 - [ ] UI/UX for better engagement.
@@ -33,6 +34,9 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 
 ### Completed
 - [x] Initial project setup.
+- [x] AMQP Connection Pool
+- [x] AMQP Publish Task
+- [x] Logger Interface
 
 ## Features
 
