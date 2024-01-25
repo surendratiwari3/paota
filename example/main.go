@@ -26,25 +26,25 @@ func main() {
 		},
 	}
 	logger.ApplicationLogger = logrus.StandardLogger()
-	newWorker, err := workerpool.NewWorker(cnf)
+	newWorkerPool, err := workerpool.NewWorkerPool(cnf, 10, "testWorker")
 	if err != nil {
-		logger.ApplicationLogger.Error("worker is not created", err)
+		logger.ApplicationLogger.Error("workerPool is not created", err)
 		os.Exit(0)
-	} else if newWorker == nil {
-		logger.ApplicationLogger.Info("worker is nil")
+	} else if newWorkerPool == nil {
+		logger.ApplicationLogger.Info("workerPool is nil")
 		os.Exit(0)
 	}
-	logger.ApplicationLogger.Info("hello world - 3")
+	logger.ApplicationLogger.Info("newWorkerPool created successfully")
 	// Register tasks
 	regTasks := map[string]interface{}{
 		"add": task.Add,
 	}
-	err = newWorker.RegisterTasks(regTasks)
+	err = newWorkerPool.RegisterTasks(regTasks)
 	if err != nil {
 		logger.ApplicationLogger.Info("error while registering task")
 		return
 	}
-	logger.ApplicationLogger.Info(newWorker.IsTaskRegistered("add"))
+	logger.ApplicationLogger.Info(newWorkerPool.IsTaskRegistered("add"))
 
 	logger.ApplicationLogger.Info("Worker is also started")
 	// UserRecord represents the structure of user records.
@@ -78,5 +78,5 @@ func main() {
 		},
 		IgnoreWhenTaskNotRegistered: true,
 	}
-	newWorker.SendTaskWithContext(context.Background(), store2Mongo)
+	newWorkerPool.SendTaskWithContext(context.Background(), store2Mongo)
 }
