@@ -1,10 +1,17 @@
 package task
 
+import (
+	"fmt"
+	"github.com/surendratiwari3/paota/task"
+)
+
 // Add ...
-func Add(args ...int64) (int64, error) {
-	sum := int64(0)
-	for _, arg := range args {
-		sum += arg
-	}
-	return sum, nil
+func Add(arg *task.Signature) error {
+	fmt.Println("hello world")
+	return nil
+}
+
+func Print(arg *task.Signature) error {
+	fmt.Println("hello world")
+	return nil
 }

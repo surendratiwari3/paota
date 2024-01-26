@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/surendratiwari3/paota/broker"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/store"
 	"github.com/surendratiwari3/paota/task"
 	"reflect"
@@ -39,21 +40,23 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (*Worker
 		return nil, err
 	}
 
+	fmt.Println(config.GetConfigProvider().GetConfig().AMQP)
+
 	cnf := config.GetConfigProvider().GetConfig()
 	if cnf == nil {
 		return nil, errors.New("config is not provided")
 	}
 
-	taskChannel := make(chan task.Job)
-
-	taskBroker, err := CreateBroker(taskChannel)
+	taskBroker, err := CreateBroker()
 	if err != nil {
+		logger.ApplicationLogger.Error("broker creation failed", err)
 		return nil, err
 	}
 
 	// Backend is optional so we ignore the error
 	backend, err := CreateStore()
 	if err != nil {
+		logger.ApplicationLogger.Error("store creation failed", err)
 		return nil, err
 	}
 
@@ -69,7 +72,6 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (*Worker
 		concurrency:     concurrency,
 		nameSpace:       nameSpace,
 		contextType:     reflect.TypeOf(ctx),
-		taskChannel:     taskChannel,
 	}
 	return workerPool, nil
 }
@@ -188,9 +190,7 @@ func (wp *WorkerPool) Start() error {
 		for {
 			workers := make(chan struct{}, wp.concurrency)
 			wp.initializeWorkers(workers, wp.concurrency)
-
 			wp.broker.StartConsumer(wp.nameSpace, workers, wp.registeredTasks)
-			return
 		}
 	}()
 

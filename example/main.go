@@ -9,24 +9,35 @@ import (
 	"github.com/surendratiwari3/paota/logger"
 	paotaTask "github.com/surendratiwari3/paota/task"
 	"github.com/surendratiwari3/paota/workerpool"
+	"net/http"
 	"os"
 )
 
 func main() {
-	cnf := &config.Config{
-		Broker:        "amqp",
-		Store:         "null",
+	go func() {
+		http.ListenAndServe("localhost:6060", nil)
+	}()
+	logger.ApplicationLogger = logrus.StandardLogger()
+	cnf := config.Config{
+		Broker: "amqp",
+		//Store:         "null",
 		TaskQueueName: "machine",
 		AMQP: &config.AMQPConfig{
-			Url:          "amqp://guest:guest@localhost:55005/",
-			Exchange:     "machinery_exchange",
-			ExchangeType: "direct",
-			BindingKey:   "machinery_tasks_1",
-			//PrefetchCount: 100,
+			Url:                "amqp://guest:guest@localhost:55005/",
+			Exchange:           "machinery_exchange",
+			ExchangeType:       "direct",
+			BindingKey:         "machinery_tasks_1",
+			PrefetchCount:      100,
+			ConnectionPoolSize: 10,
 		},
 	}
-	logger.ApplicationLogger = logrus.StandardLogger()
-	newWorkerPool, err := workerpool.NewWorkerPool(cnf, 10, "testWorker")
+	err := config.GetConfigProvider().SetApplicationConfig(cnf)
+	if err != nil {
+		logger.ApplicationLogger.Error("config error", err)
+		return
+	}
+
+	newWorkerPool, err := workerpool.NewWorkerPool(context.Background(), 10, "testWorker")
 	if err != nil {
 		logger.ApplicationLogger.Error("workerPool is not created", err)
 		os.Exit(0)
@@ -37,7 +48,8 @@ func main() {
 	logger.ApplicationLogger.Info("newWorkerPool created successfully")
 	// Register tasks
 	regTasks := map[string]interface{}{
-		"add": task.Add,
+		"add":   task.Add,
+		"Print": task.Print,
 	}
 	err = newWorkerPool.RegisterTasks(regTasks)
 	if err != nil {
@@ -69,7 +81,7 @@ func main() {
 	}
 
 	store2Mongo := &paotaTask.Signature{
-		Name: "WriteToMongoTask",
+		Name: "Print",
 		Args: []paotaTask.Arg{
 			{
 				Type:  "string",
@@ -78,5 +90,7 @@ func main() {
 		},
 		IgnoreWhenTaskNotRegistered: true,
 	}
-	newWorkerPool.SendTaskWithContext(context.Background(), store2Mongo)
+	for i := 0; i < 100000; i++ {
+		newWorkerPool.SendTaskWithContext(context.Background(), store2Mongo)
+	}
 }

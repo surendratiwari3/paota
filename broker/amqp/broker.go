@@ -50,17 +50,20 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, re
 	defer func(channel *amqp.Channel) {
 		err := channel.Close()
 		if err != nil {
+			logger.ApplicationLogger.Error("failed to start consumer, exit", err)
 			//TODO:error handling
 		}
 	}(channel)
 
 	// Channel QOS
 	if err = b.setChannelQoS(channel); err != nil {
+		logger.ApplicationLogger.Error("failed to set channel qos, exit", err)
 		return err
 	}
 
 	deliveries, err := b.createConsumer(channel, queueName, consumerTag)
 	if err != nil {
+		logger.ApplicationLogger.Error("failed to get deliveries, exit", err)
 		return err
 	}
 
@@ -71,15 +74,21 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, re
 	for {
 		select {
 		case amqpErr := <-amqpErrorChannel:
+			logger.ApplicationLogger.Error("error in consumer, exit", amqpErr)
 			return amqpErr
 		case err := <-errorsChan:
+			logger.ApplicationLogger.Error("error in consumer, exit", err)
 			return err
 		case d := <-deliveries:
+			b.processingWG.Add(1)
 			b.processDelivery(workers, d, registeredTasks)
 		case <-b.stopChannel:
+			logger.ApplicationLogger.Warning("stop request in consumer, exit")
 			return nil
 		}
 	}
+	b.processingWG.Wait()
+	return nil
 }
 
 func (b *AMQPBroker) getQueueName() string {
@@ -151,7 +160,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 // NewAMQPBroker creates a new instance of the AMQP broker
 // It opens connections to RabbitMQ, declares an exchange, opens a channel,
 // declares and binds the queue, and enables publish notifications
-func NewAMQPBroker(taskChannel chan task.Job) (broker.Broker, error) {
+func NewAMQPBroker() (broker.Broker, error) {
 	cfg := config.GetConfigProvider().GetConfig()
 	amqpErrorChannel := make(chan *amqp.Error, 1)
 	amqpBroker := &AMQPBroker{
@@ -164,11 +173,13 @@ func NewAMQPBroker(taskChannel chan task.Job) (broker.Broker, error) {
 
 	err := amqpBroker.amqpAdapter.CreateConnectionPool()
 	if err != nil {
+		logger.ApplicationLogger.Error("failed to created connection pool, return", err)
 		return nil, err
 	}
 
 	// Set up exchange, queue, and binding
 	if err := amqpBroker.setupExchangeQueueBinding(); err != nil {
+		logger.ApplicationLogger.Error("failed to created exchange queue binding, return", err)
 		return nil, err
 	}
 
@@ -283,13 +294,16 @@ func (b *AMQPBroker) createConsumer(channel *amqp.Channel, queueName, consumerTa
 func (b *AMQPBroker) processDelivery(workers chan struct{}, d amqp.Delivery, registeredTasks *sync.Map) {
 	// get worker from pool (blocks until one is available)
 	<-workers
-	b.processingWG.Add(1)
-
 	// Consume the task inside a goroutine so multiple tasks
 	// can be processed concurrently
 	go func() {
 		if err := b.taskProcessor(d, registeredTasks); err != nil {
+			logger.ApplicationLogger.Error("error in task processor, exit", err)
 			// TODO: error handling
+		}
+		err := d.Ack(false)
+		if err != nil {
+			logger.ApplicationLogger.Error("error while ack")
 		}
 		b.processingWG.Done()
 		workers <- struct{}{}
@@ -299,6 +313,7 @@ func (b *AMQPBroker) processDelivery(workers chan struct{}, d amqp.Delivery, reg
 // consumerDeliveryHandler
 func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, registeredTask *sync.Map) error {
 	if len(delivery.Body) == 0 {
+		logger.ApplicationLogger.Error("empty message, return")
 		delivery.Nack(true, false)    // multiple, requeue
 		return errors.ErrEmptyMessage // RabbitMQ down?
 	}
@@ -310,19 +325,21 @@ func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, registeredTask *sync.
 	decoder := json.NewDecoder(bytes.NewReader(delivery.Body))
 	decoder.UseNumber()
 	if err := decoder.Decode(signature); err != nil {
+		logger.ApplicationLogger.Error("decode error in message, return")
 		delivery.Nack(multiple, requeue)
 		return err
 	}
 
 	// Check if the task is registered
 	if taskFunc, ok := registeredTask.Load(signature.Name); ok {
-		// Execute the registered function with the signature argument
-		if fn, ok := taskFunc.(func(*task.Signature)); ok {
-			fn(signature)
-			return nil
+		if fn, ok := taskFunc.(func(*task.Signature) error); ok {
+			return fn(signature)
 		}
 		// Handle the case where the value in registeredTask is not a function
 		return errors.ErrTaskMustBeFunc
 	}
+
+	fmt.Println(signature.Name)
+
 	return errors.ErrTaskNotRegistered
 }

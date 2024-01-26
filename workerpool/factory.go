@@ -5,17 +5,18 @@ import (
 	amqpBroker "github.com/surendratiwari3/paota/broker/amqp"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/errors"
+	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/store"
-	"github.com/surendratiwari3/paota/task"
 )
 
 // CreateBroker creates a new object of broker.Broker
-func CreateBroker(taskChannel chan task.Job) (broker.Broker, error) {
+func CreateBroker() (broker.Broker, error) {
 	brokerType := config.GetConfigProvider().GetConfig().Broker
 	switch brokerType {
 	case "amqp":
-		return amqpBroker.NewAMQPBroker(taskChannel)
+		return amqpBroker.NewAMQPBroker()
 	default:
+		logger.ApplicationLogger.Error("unsupported broker")
 		return nil, errors.ErrUnsupportedBroker
 	}
 }
@@ -24,6 +25,8 @@ func CreateBroker(taskChannel chan task.Job) (broker.Broker, error) {
 func CreateStore() (store.Backend, error) {
 	storeBackend := config.GetConfigProvider().GetConfig().Store
 	switch storeBackend {
+	case "":
+		return nil, nil
 	default:
 		return nil, errors.ErrUnsupportedStore
 	}

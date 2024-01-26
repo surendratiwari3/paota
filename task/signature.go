@@ -1,8 +1,18 @@
 package task
 
 import (
+	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"reflect"
+)
+
+type signatureCtxType struct{}
+
+var signatureCtx signatureCtxType
+
+var (
+	ctxType = reflect.TypeOf((*context.Context)(nil)).Elem()
 )
 
 // Arg represents a single argument passed to invocation fo a task
@@ -12,9 +22,13 @@ type Arg struct {
 	Value interface{} `bson:"value"`
 }
 
+// Job wraps a signature and methods used to reflect task arguments and
+// return values after invoking the task
 type Job struct {
-	Signature *Signature
-	Tag       uint64
+	TaskFunc   reflect.Value
+	UseContext bool
+	Context    context.Context
+	Args       []reflect.Value
 }
 
 // Signature represents a single task invocation

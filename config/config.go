@@ -10,6 +10,7 @@ import (
 // ConfigProvider is an interface for retrieving configuration.
 type ConfigProvider interface {
 	ReadFromEnv() error
+	SetApplicationConfig(config Config) error
 	ValidateConfig(cfg Config) error
 	GetConfig() *Config
 }
