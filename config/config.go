@@ -52,6 +52,14 @@ func (cp *configProvider) ReadFromEnv() error {
 	return nil
 }
 
+func (cp *configProvider) SetApplicationConfig(config Config) error {
+	if err := cp.ValidateConfig(config); err != nil {
+		return err
+	}
+	cp.applicationConfig = config
+	return nil
+}
+
 func (cp *configProvider) ValidateConfig(cfg Config) error {
 	// Use the validator package to perform validations
 	validate := validator.New()

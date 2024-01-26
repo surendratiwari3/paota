@@ -26,7 +26,6 @@ type WorkerPool struct {
 	concurrency          uint
 	nameSpace            string
 	contextType          reflect.Type
-	workers              []*worker
 	taskChannel          chan task.Job
 	ackChannel           chan uint64 // Channel to receive delivery tags for acknowledgments
 }
@@ -72,12 +71,6 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (*Worker
 		contextType:     reflect.TypeOf(ctx),
 		taskChannel:     taskChannel,
 	}
-
-	for i := uint(0); i < workerPool.concurrency; i++ {
-		w := newWorker(workerPool.nameSpace, workerPool.workerPoolID, workerPool.contextType)
-		workerPool.workers = append(workerPool.workers, w)
-	}
-
 	return workerPool, nil
 }
 
@@ -188,10 +181,19 @@ func (wp *WorkerPool) Start() error {
 	if wp.started {
 		return nil
 	}
-	for _, w := range wp.workers {
-		go w.start()
-	}
+
 	wp.started = true
+
+	go func() {
+		for {
+			workers := make(chan struct{}, wp.concurrency)
+			wp.initializeWorkers(workers, wp.concurrency)
+
+			wp.broker.StartConsumer(wp.nameSpace, workers, wp.registeredTasks)
+			return
+		}
+	}()
+
 	//here now worker pool called this but as we know amqp consumer will be one but it will prefetch and now how to distribute
 	return nil
 }
@@ -205,24 +207,12 @@ func (wp *WorkerPool) Stop() {
 	if wp.registeredTasksCount == 0 {
 		return
 	}
-
 	wp.started = false
+	wp.broker.StopConsumer()
+}
 
-	wg := sync.WaitGroup{}
-	for _, w := range wp.workers {
-		wg.Add(1)
-		go func(w *worker) {
-			w.stop()
-			wg.Done()
-		}(w)
+func (wp *WorkerPool) initializeWorkers(workers chan struct{}, concurrency uint) {
+	for i := uint(0); i < concurrency; i++ {
+		workers <- struct{}{}
 	}
-	wg.Wait()
-}
-
-func (wp *WorkerPool) AddJob(job task.Job) {
-	wp.taskChannel <- job
-}
-
-func (wp *WorkerPool) Acknowledge(tag uint64) {
-	wp.ackChannel <- tag
 }

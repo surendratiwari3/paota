@@ -18,20 +18,18 @@ import (
 // AMQPBroker represents an AMQP broker
 type AMQPBroker struct {
 	Config           *config.Config
-	taskChannel      chan task.Job
 	ackChannel       chan uint64
 	amqpAdapter      adapter.Adapter
 	connectionsMutex sync.Mutex
+	processingWG     sync.WaitGroup
+	amqpErrorChannel <-chan *amqp.Error
+	stopChannel      chan struct{}
+	doneStopChannel  chan struct{}
 }
 
 // StartConsumer initializes the AMQP consumer
-func (b *AMQPBroker) StartConsumer(consumerTag string, concurrency int) error {
-	// TODO: Implement consumer setup (if needed)
-
-	queueName := config.GetConfigProvider().GetConfig().TaskQueueName
-	if queueName == "" {
-		return errors.ErrInvalidConfig
-	}
+func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, registeredTasks *sync.Map) error {
+	queueName := b.getQueueName()
 
 	conn, err := b.getConnection()
 	if err != nil {
@@ -45,7 +43,7 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, concurrency int) error {
 	}(b.amqpAdapter, conn)
 
 	// Create a channel
-	channel, err := conn.Channel()
+	channel, err := b.createAmqpChannel(conn)
 	if err != nil {
 		return err
 	}
@@ -57,38 +55,41 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, concurrency int) error {
 	}(channel)
 
 	// Channel QOS
-	if err = channel.Qos(
-		config.GetConfigProvider().GetConfig().AMQP.PrefetchCount,
-		0,     // prefetch size
-		false, // global
-	); err != nil {
+	if err = b.setChannelQoS(channel); err != nil {
 		return err
 	}
 
-	deliveries, err := channel.Consume(
-		queueName,   // queue
-		consumerTag, // consumer tag
-		false,       // auto-ack
-		false,       // exclusive
-		false,       // no-local
-		false,       // no-wait
-		nil,         // arguments
-	)
+	deliveries, err := b.createConsumer(channel, queueName, consumerTag)
 	if err != nil {
 		return err
 	}
 
 	logger.ApplicationLogger.Info("[*] Waiting for messages. To exit press CTRL+C")
 
-	b.processDelivery(deliveries, nil)
+	errorsChan := make(chan error, 1)
+	amqpErrorChannel := b.amqpErrorChannel
+	for {
+		select {
+		case amqpErr := <-amqpErrorChannel:
+			return amqpErr
+		case err := <-errorsChan:
+			return err
+		case d := <-deliveries:
+			b.processDelivery(workers, d, registeredTasks)
+		case <-b.stopChannel:
+			return nil
+		}
+	}
+}
 
-	return nil
+func (b *AMQPBroker) getQueueName() string {
+	return config.GetConfigProvider().GetConfig().TaskQueueName
 }
 
 // StopConsumer stops the AMQP consumer
-func (b *AMQPBroker) StopConsumer() error {
-	// TODO: Implement consumer stop logic
-	return nil
+func (b *AMQPBroker) StopConsumer() {
+	b.stopChannel <- struct{}{}
+	<-b.doneStopChannel
 }
 
 // Publish sends a task to the AMQP broker
@@ -112,7 +113,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 	}(b.amqpAdapter, conn)
 
 	// Create a channel
-	channel, err := conn.Channel()
+	channel, err := b.createAmqpChannel(conn)
 	if err != nil {
 		return err
 	}
@@ -152,9 +153,11 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 // declares and binds the queue, and enables publish notifications
 func NewAMQPBroker(taskChannel chan task.Job) (broker.Broker, error) {
 	cfg := config.GetConfigProvider().GetConfig()
+	amqpErrorChannel := make(chan *amqp.Error, 1)
 	amqpBroker := &AMQPBroker{
 		Config:           cfg,
 		connectionsMutex: sync.Mutex{},
+		amqpErrorChannel: amqpErrorChannel,
 	}
 
 	amqpBroker.amqpAdapter = adapter.NewAMQPAdapter()
@@ -253,8 +256,48 @@ func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
 	return nil, nil
 }
 
+func (b *AMQPBroker) createAmqpChannel(conn *amqp.Connection) (*amqp.Channel, error) {
+	return conn.Channel()
+}
+
+func (b *AMQPBroker) setChannelQoS(channel *amqp.Channel) error {
+	return channel.Qos(
+		config.GetConfigProvider().GetConfig().AMQP.PrefetchCount,
+		0,     // prefetch size
+		false, // global
+	)
+}
+
+func (b *AMQPBroker) createConsumer(channel *amqp.Channel, queueName, consumerTag string) (<-chan amqp.Delivery, error) {
+	return channel.Consume(
+		queueName,   // queue
+		consumerTag, // consumer tag
+		false,       // auto-ack
+		false,       // exclusive
+		false,       // no-local
+		false,       // no-wait
+		nil,         // arguments
+	)
+}
+
+func (b *AMQPBroker) processDelivery(workers chan struct{}, d amqp.Delivery, registeredTasks *sync.Map) {
+	// get worker from pool (blocks until one is available)
+	<-workers
+	b.processingWG.Add(1)
+
+	// Consume the task inside a goroutine so multiple tasks
+	// can be processed concurrently
+	go func() {
+		if err := b.taskProcessor(d, registeredTasks); err != nil {
+			// TODO: error handling
+		}
+		b.processingWG.Done()
+		workers <- struct{}{}
+	}()
+}
+
 // consumerDeliveryHandler
-func (b *AMQPBroker) consumerDeliveryHandler(delivery amqp.Delivery) error {
+func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, registeredTask *sync.Map) error {
 	if len(delivery.Body) == 0 {
 		delivery.Nack(true, false)    // multiple, requeue
 		return errors.ErrEmptyMessage // RabbitMQ down?
@@ -271,31 +314,15 @@ func (b *AMQPBroker) consumerDeliveryHandler(delivery amqp.Delivery) error {
 		return err
 	}
 
-	job := task.Job{Tag: delivery.DeliveryTag, Signature: signature}
-	b.taskChannel <- job
-
-	return nil
-}
-
-func (b *AMQPBroker) processDelivery(deliveries <-chan amqp.Delivery, consumerErr chan error) {
-	for d := range deliveries {
-		//TODO: error handling
-		b.consumerDeliveryHandler(d)
-	}
-	err := fmt.Errorf("handle: deliveries channel closed")
-	if consumerErr != nil {
-		consumerErr <- err
-	}
-}
-
-func (b *AMQPBroker) processAck() {
-	go func() {
-		select {
-		case tag := <-b.ackChannel:
-			delivery := amqp.Delivery{
-				DeliveryTag: tag,
-			}
-			_ = delivery.Ack(false)
+	// Check if the task is registered
+	if taskFunc, ok := registeredTask.Load(signature.Name); ok {
+		// Execute the registered function with the signature argument
+		if fn, ok := taskFunc.(func(*task.Signature)); ok {
+			fn(signature)
+			return nil
 		}
-	}()
+		// Handle the case where the value in registeredTask is not a function
+		return errors.ErrTaskMustBeFunc
+	}
+	return errors.ErrTaskNotRegistered
 }

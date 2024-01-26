@@ -4,7 +4,8 @@ import "errors"
 
 var (
 	// ErrTaskMustBeFunc ...
-	ErrTaskMustBeFunc = errors.New("Task must be a func type")
+	ErrTaskNotRegistered = errors.New("Task not registered")
+	ErrTaskMustBeFunc    = errors.New("Task must be a func type")
 	// ErrTaskReturnsNoValue ...
 	ErrTaskReturnsNoValue = errors.New("Task must return at least a single value")
 	// ErrLastReturnValueMustBeError ..
