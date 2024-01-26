@@ -338,8 +338,6 @@ func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, registeredTask *sync.
 		// Handle the case where the value in registeredTask is not a function
 		return errors.ErrTaskMustBeFunc
 	}
-
-	fmt.Println(signature.Name)
-
+	
 	return errors.ErrTaskNotRegistered
 }
