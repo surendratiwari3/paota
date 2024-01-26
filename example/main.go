@@ -2,19 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/example/task"
+	"github.com/surendratiwari3/paota/task"
+
+	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/workerpool"
-	"net/http"
 	"os"
 )
 
 func main() {
-	go func() {
-		http.ListenAndServe("localhost:6060", nil)
-	}()
+
 	logger.ApplicationLogger = logrus.StandardLogger()
 	cnf := config.Config{
 		Broker: "amqp",
@@ -46,8 +46,7 @@ func main() {
 	logger.ApplicationLogger.Info("newWorkerPool created successfully")
 	// Register tasks
 	regTasks := map[string]interface{}{
-		"add":   task.Add,
-		"Print": task.Print,
+		"Print": Print,
 	}
 	err = newWorkerPool.RegisterTasks(regTasks)
 	if err != nil {
@@ -57,44 +56,48 @@ func main() {
 	logger.ApplicationLogger.Info(newWorkerPool.IsTaskRegistered("add"))
 
 	logger.ApplicationLogger.Info("Worker is also started")
-	/*
-		// UserRecord represents the structure of user records.
-		type UserRecord struct {
-			ID    string `json:"id"`
-			Name  string `json:"name"`
-			Email string `json:"email"`
-			// Add other fields as needed
-		}
 
-		// Replace this with the received user record
-		user := UserRecord{
-			ID:    "1",
-			Name:  "John Doe",
-			Email: "john.doe@example.com",
-		}
+	// UserRecord represents the structure of user records.
+	type UserRecord struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Email string `json:"email"`
+		// Add other fields as needed
+	}
 
-		// Convert the struct to a JSON string
-		userJSON, err := json.Marshal(user)
-		if err != nil {
-			//
-		}
+	// Replace this with the received user record
+	user := UserRecord{
+		ID:    "1",
+		Name:  "John Doe",
+		Email: "john.doe@example.com",
+	}
 
-		store2Mongo := &paotaTask.Signature{
-			Name: "Print",
-			Args: []paotaTask.Arg{
-				{
-					Type:  "string",
-					Value: string(userJSON),
-				},
+	// Convert the struct to a JSON string
+	userJSON, err := json.Marshal(user)
+	if err != nil {
+		//
+	}
+
+	printJob := &task.Signature{
+		Name: "Print",
+		Args: []task.Arg{
+			{
+				Type:  "string",
+				Value: string(userJSON),
 			},
-			IgnoreWhenTaskNotRegistered: true,
-		}
-		/*
-			go func() {
-				for i := 0; i < 100000; i++ {
-					newWorkerPool.SendTaskWithContext(context.Background(), store2Mongo)
-				}
-			}()*/
+		},
+		IgnoreWhenTaskNotRegistered: true,
+	}
 
-	newWorkerPool.Start()
+	go func() {
+		for i := 0; i < 100000; i++ {
+			newWorkerPool.SendTaskWithContext(context.Background(), printJob)
+		}
+	}()
+
+}
+
+func Print(arg *task.Signature) error {
+	logger.ApplicationLogger.Info("Print Function Completed")
+	return nil
 }
