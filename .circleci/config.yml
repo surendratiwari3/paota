@@ -7,19 +7,14 @@ jobs:
       - run:
           name: Install Mockery
           command: |
-            if [ ! -d "$GOPATH/bin" ]; then
-              mkdir -p $GOPATH/bin
-            fi
-            export GOBIN=$GOPATH/bin
-            export PATH=$PATH:$GOPATH/bin
-            go get github.com/vektra/mockery/v2@latest
-            $GOPATH/bin/mockery --all --output=mocks
+            curl -LJO https://github.com/vektra/mockery/releases/download/v2.9.0/mockery_2.9.0_Linux_x86_64.tar.gz
+            tar -xvf mockery_2.9.0_Linux_x86_64.tar.gz
+            mv mockery /usr/local/bin
+            mockery --version  # Print mockery version for debugging
+            mockery --all --output=mocks
       - run:
           name: Set GOPATH/bin in PATH
           command: export PATH=$PATH:$GOPATH/bin
-      - run:
-          name: Generate Mocks
-          command: mockery --all --output=mocks
       - run:
           name: Run Unit Tests
           command: go test -v ./...
