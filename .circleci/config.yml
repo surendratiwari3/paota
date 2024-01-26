@@ -1,0 +1,22 @@
+jobs:
+  build:
+    docker:
+      - image: golang:1.21.5
+    steps:
+      - checkout
+      - run:
+          name: Install Mockery
+          command: go get github.com/vektra/mockery/v2@latest
+      - run:
+          name: Generate Mocks
+          command: mockery --all --output=mocks
+      - run:
+          name: Run Unit Tests
+          command: go test -v ./...
+
+version: 2.1
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build

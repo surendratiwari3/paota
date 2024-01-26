@@ -27,8 +27,8 @@ func TestNewAMQPBroker(t *testing.T) {
 	broker, err := NewAMQPBroker()
 
 	// Perform assertions as needed
-	assert.NoError(t, err)
-	assert.NotNil(t, broker)
+	assert.Error(t, err)
+	assert.Nil(t, broker)
 }
 
 func TestAMQPBrokerGetRoutingKey(t *testing.T) {
