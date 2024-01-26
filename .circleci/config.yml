@@ -10,6 +10,7 @@ jobs:
             if [ ! -d "$GOPATH/bin" ]; then
               mkdir -p $GOPATH/bin
             fi
+            export GOBIN=$GOPATH/bin
             export PATH=$PATH:$GOPATH/bin
             go get github.com/vektra/mockery/v2@latest
             $GOPATH/bin/mockery --all --output=mocks
