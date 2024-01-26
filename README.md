@@ -38,6 +38,7 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 - [x] WorkerPool Supported
 - [x] Consumer with concurrency added
 - [x] Consumer task processor based on defined task added
+- [x] CircleCI Integration with generating mock and running unit test 
 
 ## Features
 
