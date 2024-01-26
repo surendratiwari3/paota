@@ -7,12 +7,9 @@ jobs:
       - run:
           name: Install Mockery
           command: |
-            if [ ! -d "$GOPATH/bin" ]; then
-              mkdir -p $GOPATH/bin
-            fi
-            export GOBIN=$GOPATH/bin
-            export PATH=$PATH:$GOPATH/bin
-            go get github.com/vektra/mockery/v2@latest
+            go install github.com/vektra/mockery/v2@latest
+            export PATH=$PATH:$(go env GOPATH)/bin
+            mockery --version  # Print mockery version for debugging
             mockery --all --output=mocks
       - run:
           name: Set GOPATH/bin in PATH
