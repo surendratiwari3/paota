@@ -319,9 +319,26 @@ func Print(arg *task.Signature) error {
 ```
 
 
-
 ### Mocks for this repository are generated using mockery(v2)
 ```bash
 mockery --all --output=mocks
 ```
+
+## Benchmarks
+
+### Benchmark Configuration
+Information about parameters and configurations for each benchmark will be added in the future.
+
+### Running the Benchmarks
+Instructions on how to run the benchmarks will be provided once benchmarks are available.
+
+### Interpreting Results
+Guidance on how to interpret benchmark results and metrics will be added.
+
+### Comparison and Analysis (Future)
+Plans for adding new benchmarks and criteria for doing so will be discussed in this section.
+
+### Conclusion
+A summary of the importance of benchmarking and plans for future benchmarking activities will be provided.
+
 
