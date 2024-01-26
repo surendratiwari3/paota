@@ -157,12 +157,12 @@ func main() {
 	// Configure Paota
 	cnf := config.Config{
 		Broker:         "amqp",
-		TaskQueueName:  "machine",
+		TaskQueueName:  "paota_task_queue",
 		AMQP: &config.AMQPConfig{
 			Url:                "amqp://guest:guest@localhost:55005/",
-			Exchange:           "machinery_exchange",
+			Exchange:           "paota_task_exchange",
 			ExchangeType:       "direct",
-			BindingKey:         "machinery_tasks_1",
+			BindingKey:         "paota_task_binding_key",
 			PrefetchCount:      100,
 			ConnectionPoolSize: 10,
 		},
@@ -265,12 +265,12 @@ func main() {
 	// Configure Paota
 	cnf := config.Config{
 		Broker:         "amqp",
-		TaskQueueName:  "machine",
+		TaskQueueName:  "paota_task_queue",
 		AMQP: &config.AMQPConfig{
 			Url:                "amqp://guest:guest@localhost:55005/",
-			Exchange:           "machinery_exchange",
+			Exchange:           "paota_task_exchange",
 			ExchangeType:       "direct",
-			BindingKey:         "machinery_tasks_1",
+			BindingKey:         "paota_task_binding_key",
 			PrefetchCount:      100,
 			ConnectionPoolSize: 10,
 		},
