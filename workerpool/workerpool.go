@@ -10,6 +10,8 @@ import (
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/store"
 	"github.com/surendratiwari3/paota/task"
+	"os"
+	"os/signal"
 	"reflect"
 
 	"sync"
@@ -193,6 +195,11 @@ func (wp *WorkerPool) Start() error {
 			wp.broker.StartConsumer(wp.nameSpace, workers, wp.registeredTasks)
 		}
 	}()
+
+	// Wait for a signal to quit:
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, os.Kill)
+	<-signalChan
 
 	//here now worker pool called this but as we know amqp consumer will be one but it will prefetch and now how to distribute
 	return nil

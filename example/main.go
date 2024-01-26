@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
-	paotaTask "github.com/surendratiwari3/paota/task"
 	"github.com/surendratiwari3/paota/workerpool"
 	"net/http"
 	"os"
@@ -59,38 +57,44 @@ func main() {
 	logger.ApplicationLogger.Info(newWorkerPool.IsTaskRegistered("add"))
 
 	logger.ApplicationLogger.Info("Worker is also started")
-	// UserRecord represents the structure of user records.
-	type UserRecord struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
-		// Add other fields as needed
-	}
+	/*
+		// UserRecord represents the structure of user records.
+		type UserRecord struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Email string `json:"email"`
+			// Add other fields as needed
+		}
 
-	// Replace this with the received user record
-	user := UserRecord{
-		ID:    "1",
-		Name:  "John Doe",
-		Email: "john.doe@example.com",
-	}
+		// Replace this with the received user record
+		user := UserRecord{
+			ID:    "1",
+			Name:  "John Doe",
+			Email: "john.doe@example.com",
+		}
 
-	// Convert the struct to a JSON string
-	userJSON, err := json.Marshal(user)
-	if err != nil {
-		//
-	}
+		// Convert the struct to a JSON string
+		userJSON, err := json.Marshal(user)
+		if err != nil {
+			//
+		}
 
-	store2Mongo := &paotaTask.Signature{
-		Name: "Print",
-		Args: []paotaTask.Arg{
-			{
-				Type:  "string",
-				Value: string(userJSON),
+		store2Mongo := &paotaTask.Signature{
+			Name: "Print",
+			Args: []paotaTask.Arg{
+				{
+					Type:  "string",
+					Value: string(userJSON),
+				},
 			},
-		},
-		IgnoreWhenTaskNotRegistered: true,
-	}
-	for i := 0; i < 100000; i++ {
-		newWorkerPool.SendTaskWithContext(context.Background(), store2Mongo)
-	}
+			IgnoreWhenTaskNotRegistered: true,
+		}
+		/*
+			go func() {
+				for i := 0; i < 100000; i++ {
+					newWorkerPool.SendTaskWithContext(context.Background(), store2Mongo)
+				}
+			}()*/
+
+	newWorkerPool.Start()
 }
