@@ -28,6 +28,7 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 - [ ] Standard tasks based on ongoing challenges across industry
 - [ ] SDK for PHP/NodeJS
 - [ ] APM hook for newrelic
+- [ ] Custom Job Signature
 
 ### Completed
 - [x] Initial project setup.
