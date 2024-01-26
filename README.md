@@ -1,18 +1,14 @@
 # paota (WorkInProgress)
 An efficient Go task queue package, facilitating the seamless orchestration and execution of tasks. Alternative to machinery and Celery.
 
-## Architecture Diagram
-
-![Architecture Diagram](https://github.com/surendratiwari3/paota/blob/main/docs/images/paota_top_down.png)
-
 ## paota To-Do List
 
 ### In Progress
 - [ ] Update documentation for new features.
-- [ ] Publish to amqp broker
-- [ ] Consumer from amqp broker
 - [ ] Unit test and code coverage
-- [ ] WorkerPool
+- [ ] Middleware for task
+- [ ] Error Callback for task
+- [ ] Logging format with taskId
 
 ### Planned
 - [ ] UI/UX for better engagement.
@@ -35,14 +31,17 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 ### Completed
 - [x] Initial project setup.
 - [x] AMQP Connection Pool
-- [x] AMQP Publish Task
+- [x] Publish Task
 - [x] Logger Interface
+- [x] WorkerPool Supported
+- [x] Consumer with concurrency added
+- [x] Consumer task processor based on defined task added
 
 ## Features
 
 - **User-Defined Tasks:** Users can define their own tasks.
 - **Message Broker:** Utilizes RabbitMQ for task queuing.
-- **Backend Storage:** Uses MongoDB as the backend for storing and updating task information. (Optional)
+- **Backend Storage:** for storing and updating task information. (Optional)
 
 ## Getting Started
 
@@ -50,7 +49,9 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 
 - Go (version 1.21 or higher)
 - RabbitMQ (installation guide: https://www.rabbitmq.com/download.html)
-- MongoDB (installation guide: https://docs.mongodb.com/manual/installation/) - optional (if result backend in mongodb)
+
+### Task Function Format
+- **User-Defined Tasks:** function_name(arg *task.Signature) error
 
 ### Mocks for this repository are generated using mockery(v2)
 mockery --all --output=mocks
