@@ -6,7 +6,12 @@ jobs:
       - checkout
       - run:
           name: Install Mockery
-          command: go get github.com/vektra/mockery/v2@latest
+          command: |
+            if [ ! -d "$GOPATH/bin" ]; then
+              mkdir -p $GOPATH/bin
+            fi
+            export PATH=$PATH:$GOPATH/bin
+            go get github.com/vektra/mockery/v2@latest
       - run:
           name: Set GOPATH/bin in PATH
           command: export PATH=$PATH:$GOPATH/bin
