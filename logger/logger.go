@@ -28,7 +28,6 @@ func (l *DefaultLogger) Warning(args ...interface{}) {
 
 func (l *DefaultLogger) Error(args ...interface{}) {
 	//TODO implement me
-	panic("implement me")
 }
 
 func (l *DefaultLogger) Fatal(args ...interface{}) {

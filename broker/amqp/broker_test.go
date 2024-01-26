@@ -1,10 +1,35 @@
 package amqp
 
 import (
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/mocks"
 	"testing"
 )
+
+func TestNewAMQPBroker(t *testing.T) {
+
+	mockConfigProvider := new(mocks.ConfigProvider)
+
+	mockConfigProvider.On("GetConfig").Return(&config.Config{
+		Broker:        "amqp",
+		TaskQueueName: "test",
+		AMQP: &config.AMQPConfig{
+			Url:                "amqp://localhost:5672",
+			HeartBeatInterval:  30,
+			ConnectionPoolSize: 2,
+		},
+	}, nil)
+	config.SetConfigProvider(mockConfigProvider)
+
+	// Create a new instance of AMQPBroker
+	broker, err := NewAMQPBroker()
+
+	// Perform assertions as needed
+	assert.NoError(t, err)
+	assert.NotNil(t, broker)
+}
 
 func TestAMQPBrokerGetRoutingKey(t *testing.T) {
 	cfg := &config.Config{

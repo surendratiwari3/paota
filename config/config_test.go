@@ -84,3 +84,21 @@ func TestValidateConfig_validConfig(t *testing.T) {
 	err := GetConfigProvider().ValidateConfig(invalidConfig)
 	assert.Nil(t, err)
 }
+
+func TestSetApplicationConfig_invalidConfig(t *testing.T) {
+	invalidConfig := Config{
+		Broker:        "test",
+		TaskQueueName: "test",
+	}
+	err := GetConfigProvider().SetApplicationConfig(invalidConfig)
+	assert.NotNil(t, err)
+}
+
+func TestSetApplicationConfig_validConfig(t *testing.T) {
+	invalidConfig := Config{
+		Broker:        "amqp",
+		TaskQueueName: "test",
+	}
+	err := GetConfigProvider().SetApplicationConfig(invalidConfig)
+	assert.Nil(t, err)
+}
