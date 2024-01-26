@@ -12,6 +12,7 @@ jobs:
             fi
             export PATH=$PATH:$GOPATH/bin
             go get github.com/vektra/mockery/v2@latest
+            $GOPATH/bin/mockery --all --output=mocks
       - run:
           name: Set GOPATH/bin in PATH
           command: export PATH=$PATH:$GOPATH/bin
