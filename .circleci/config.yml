@@ -8,6 +8,9 @@ jobs:
           name: Install Mockery
           command: go get github.com/vektra/mockery/v2@latest
       - run:
+          name: Set GOPATH/bin in PATH
+          command: export PATH=$PATH:$GOPATH/bin
+      - run:
           name: Generate Mocks
           command: mockery --all --output=mocks
       - run:
