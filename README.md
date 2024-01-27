@@ -1,4 +1,4 @@
-# surendratiwari3/paota [![CircleCI](https://dl.circleci.com/status-badge/img/gh/surendratiwari3/paota/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/surendratiwari3/paota/tree/main)
+# paota [![CircleCI](https://dl.circleci.com/status-badge/img/gh/surendratiwari3/paota/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/surendratiwari3/paota/tree/main)
 
 An efficient Go task queue package, facilitating the seamless orchestration and execution of tasks. Alternative to machinery and Celery.
 
