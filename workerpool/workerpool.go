@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/surendratiwari3/paota/broker"
-	amqpBroker "github.com/surendratiwari3/paota/broker/amqp"
 	"github.com/surendratiwari3/paota/config"
-	appErrors "github.com/surendratiwari3/paota/errors"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/store"
 	"github.com/surendratiwari3/paota/task"
@@ -23,6 +21,7 @@ import (
 type WorkerPool struct {
 	backend              store.Backend
 	broker               broker.Broker
+	factory              IFactory
 	config               *config.Config
 	registeredTasks      *sync.Map
 	registeredTasksCount uint
@@ -59,16 +58,22 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 		registeredTasks: new(sync.Map),
 		started:         false,
 		workerPoolID:    workerPoolId,
+		factory:         globalFactory,
 	}
 
-	err := workerPool.createBroker()
+	if workerPool.factory == nil {
+		workerPool.factory = &Factory{}
+	}
+
+	factoryBroker, err := workerPool.factory.CreateBroker()
 	if err != nil {
 		logger.ApplicationLogger.Error("broker creation failed", err)
 		return nil, err
 	}
+	workerPool.broker = factoryBroker
 
 	// Backend is optional so we ignore the error
-	err = workerPool.createStore()
+	err = workerPool.factory.CreateStore()
 	if err != nil {
 		logger.ApplicationLogger.Error("store creation failed", err)
 		return nil, err
@@ -216,33 +221,5 @@ func (wp *WorkerPool) Stop() {
 func (wp *WorkerPool) initializeWorkers(workers chan struct{}, concurrency uint) {
 	for i := uint(0); i < concurrency; i++ {
 		workers <- struct{}{}
-	}
-}
-
-// CreateBroker creates a new object of broker.Broker
-func (wp *WorkerPool) createBroker() error {
-	brokerType := config.GetConfigProvider().GetConfig().Broker
-	switch brokerType {
-	case "amqp":
-		newAmqpBroker, err := amqpBroker.NewAMQPBroker()
-		if err != nil {
-			return err
-		}
-		wp.broker = newAmqpBroker
-	default:
-		logger.ApplicationLogger.Error("unsupported broker")
-		return appErrors.ErrUnsupportedBroker
-	}
-	return nil
-}
-
-// CreateStore creates a new object of store.Interface
-func (wp *WorkerPool) createStore() error {
-	storeBackend := config.GetConfigProvider().GetConfig().Store
-	switch storeBackend {
-	case "":
-		return nil
-	default:
-		return appErrors.ErrUnsupportedStore
 	}
 }

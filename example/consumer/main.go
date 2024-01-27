@@ -5,7 +5,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/task"
-
 	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/workerpool"
