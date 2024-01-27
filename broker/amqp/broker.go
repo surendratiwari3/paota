@@ -102,10 +102,14 @@ func (b *AMQPBroker) isDirectExchange() bool {
 func NewAMQPBroker() (broker.Broker, error) {
 	cfg := config.GetConfigProvider().GetConfig()
 	amqpErrorChannel := make(chan *amqp.Error, 1)
+	stopChannel := make(chan struct{})
+	doneStopChannel := make(chan struct{})
 	amqpBroker := &AMQPBroker{
 		Config:           cfg,
 		connectionsMutex: sync.Mutex{},
 		amqpErrorChannel: amqpErrorChannel,
+		stopChannel:      stopChannel,
+		doneStopChannel:  doneStopChannel,
 	}
 
 	amqpBroker.amqpAdapter = adapter.NewAMQPAdapter()
@@ -331,6 +335,7 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, re
 			b.processingWG.Add(1)
 			b.processDelivery(workers, d, registeredTasks)
 		case <-b.stopChannel:
+			b.doneStopChannel <- struct{}{}
 			logger.ApplicationLogger.Warning("stop request in consumer, exit")
 			return nil
 		}
@@ -362,11 +367,16 @@ func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, registeredTask *sync.
 	// Check if the task is registered
 	if taskFunc, ok := registeredTask.Load(signature.Name); ok {
 		if fn, ok := taskFunc.(func(*task.Signature) error); ok {
-			return fn(signature)
+			if err := fn(signature); err != nil {
+				logger.ApplicationLogger.Error("task failed to execute")
+				//TODO: retry
+			}
 		}
+		logger.ApplicationLogger.Error("invalid task function")
 		// Handle the case where the value in registeredTask is not a function
 		return errors.ErrTaskMustBeFunc
 	}
 
+	logger.ApplicationLogger.Error("task is not registered")
 	return errors.ErrTaskNotRegistered
 }

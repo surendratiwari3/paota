@@ -174,6 +174,7 @@ func (wp *WorkerPool) Start() error {
 	wp.started = true
 	logger.ApplicationLogger.Info("worker pool called")
 
+	var signalWG sync.WaitGroup
 	go func() {
 		for {
 			workers := make(chan struct{}, wp.concurrency)
@@ -183,6 +184,7 @@ func (wp *WorkerPool) Start() error {
 				logger.ApplicationLogger.Error("consumer failed to start", err)
 				return
 			}
+			signalWG.Wait()
 		}
 	}()
 
@@ -193,6 +195,7 @@ func (wp *WorkerPool) Start() error {
 	<-signalChan
 
 	wp.Stop()
+
 	//here now worker pool called this but as we know amqp consumer will be one but it will prefetch and now how to distribute
 	return nil
 }
