@@ -2,6 +2,9 @@
 
 An efficient Go task queue package, facilitating the seamless orchestration and execution of tasks. Alternative to machinery and Celery.
 
+## Architecture
+![Architecture Diagram](https://github.com/surendratiwari3/paota/blob/main/docs/images/paota_architecture.png)
+
 ## paota To-Do List
 
 ### In Progress

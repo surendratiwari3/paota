@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/surendratiwari3/paota/broker"
+	amqpBroker "github.com/surendratiwari3/paota/broker/amqp"
 	"github.com/surendratiwari3/paota/config"
+	appErrors "github.com/surendratiwari3/paota/errors"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/store"
 	"github.com/surendratiwari3/paota/task"
@@ -37,49 +39,46 @@ type WorkerPoolOptions struct {
 }
 
 // NewWorkerPool creates WorkerPool instance
-func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (*WorkerPool, error) {
+func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, error) {
 	if err := validateContextType(ctx); err != nil {
 		return nil, err
 	}
-
-	fmt.Println(config.GetConfigProvider().GetConfig().AMQP)
 
 	cnf := config.GetConfigProvider().GetConfig()
 	if cnf == nil {
 		return nil, errors.New("config is not provided")
 	}
 
-	taskBroker, err := CreateBroker()
+	workerPoolId := uuid.New().String()
+
+	workerPool := &WorkerPool{
+		concurrency:     concurrency,
+		config:          cnf,
+		contextType:     reflect.TypeOf(ctx),
+		nameSpace:       nameSpace,
+		registeredTasks: new(sync.Map),
+		started:         false,
+		workerPoolID:    workerPoolId,
+	}
+
+	err := workerPool.createBroker()
 	if err != nil {
 		logger.ApplicationLogger.Error("broker creation failed", err)
 		return nil, err
 	}
 
 	// Backend is optional so we ignore the error
-	backend, err := CreateStore()
+	err = workerPool.createStore()
 	if err != nil {
 		logger.ApplicationLogger.Error("store creation failed", err)
 		return nil, err
 	}
 
-	workerPoolId := uuid.New().String()
-
-	workerPool := &WorkerPool{
-		config:          cnf,
-		registeredTasks: new(sync.Map),
-		broker:          taskBroker,
-		backend:         backend,
-		workerPoolID:    workerPoolId,
-		started:         false,
-		concurrency:     concurrency,
-		nameSpace:       nameSpace,
-		contextType:     reflect.TypeOf(ctx),
-	}
 	return workerPool, nil
 }
 
 // NewWorkerPoolWithOptions : TODO future with options
-func NewWorkerPoolWithOptions(ctx interface{}, concurrency uint, namespace string, workerPoolOpts WorkerPoolOptions) (*WorkerPool, error) {
+func NewWorkerPoolWithOptions(ctx interface{}, concurrency uint, namespace string, workerPoolOpts WorkerPoolOptions) (Pool, error) {
 	return NewWorkerPool(ctx, concurrency, namespace)
 }
 
@@ -101,16 +100,6 @@ func (wp *WorkerPool) GetBackend() store.Backend {
 // SetBackend sets backend
 func (wp *WorkerPool) SetBackend(backend store.Backend) {
 	wp.backend = backend
-}
-
-// GetConfig returns connection object
-func (wp *WorkerPool) GetConfig() *config.Config {
-	return wp.config
-}
-
-// SetConfig sets config
-func (wp *WorkerPool) SetConfig(cnf *config.Config) {
-	wp.config = cnf
 }
 
 // RegisterTasks registers all tasks at once
@@ -167,11 +156,6 @@ func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *task.S
 	return task.NewPendingTaskState(signature), nil
 }
 
-// SendTask publishes a task to the default queue
-func (wp *WorkerPool) SendTask(signature *task.Signature) (*task.State, error) {
-	return wp.SendTaskWithContext(context.Background(), signature)
-}
-
 // validateContextType will panic if context is invalid
 func validateContextType(ctx interface{}) error {
 	ctxType := reflect.TypeOf(ctx)
@@ -182,25 +166,33 @@ func validateContextType(ctx interface{}) error {
 }
 
 func (wp *WorkerPool) Start() error {
+	logger.ApplicationLogger.Info("worker pool called")
 	if wp.started {
 		return nil
 	}
 
 	wp.started = true
+	logger.ApplicationLogger.Info("worker pool called")
 
 	go func() {
 		for {
 			workers := make(chan struct{}, wp.concurrency)
 			wp.initializeWorkers(workers, wp.concurrency)
-			wp.broker.StartConsumer(wp.nameSpace, workers, wp.registeredTasks)
+			err := wp.broker.StartConsumer(wp.nameSpace, workers, wp.registeredTasks)
+			if err != nil {
+				logger.ApplicationLogger.Error("consumer failed to start", err)
+				return
+			}
 		}
 	}()
 
+	logger.ApplicationLogger.Info("worker pool started")
 	// Wait for a signal to quit:
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, os.Kill)
 	<-signalChan
 
+	wp.Stop()
 	//here now worker pool called this but as we know amqp consumer will be one but it will prefetch and now how to distribute
 	return nil
 }
@@ -221,5 +213,33 @@ func (wp *WorkerPool) Stop() {
 func (wp *WorkerPool) initializeWorkers(workers chan struct{}, concurrency uint) {
 	for i := uint(0); i < concurrency; i++ {
 		workers <- struct{}{}
+	}
+}
+
+// CreateBroker creates a new object of broker.Broker
+func (wp *WorkerPool) createBroker() error {
+	brokerType := config.GetConfigProvider().GetConfig().Broker
+	switch brokerType {
+	case "amqp":
+		newAmqpBroker, err := amqpBroker.NewAMQPBroker()
+		if err != nil {
+			return err
+		}
+		wp.broker = newAmqpBroker
+	default:
+		logger.ApplicationLogger.Error("unsupported broker")
+		return appErrors.ErrUnsupportedBroker
+	}
+	return nil
+}
+
+// CreateStore creates a new object of store.Interface
+func (wp *WorkerPool) createStore() error {
+	storeBackend := config.GetConfigProvider().GetConfig().Store
+	switch storeBackend {
+	case "":
+		return nil
+	default:
+		return appErrors.ErrUnsupportedStore
 	}
 }
