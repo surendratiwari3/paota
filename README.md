@@ -8,30 +8,29 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 ## paota To-Do List
 
 ### In Progress
-- [ ] Update documentation for new features.
-- [ ] Unit test and code coverage
 - [ ] Middleware for task
-- [ ] Error Callback for task
-- [ ] Logging format with taskId
+- [ ] Retry for task for amqp broker
+- [ ] Logging format
 
 ### Planned
-- [ ] UI/UX for better engagement.
-- [ ] Scheduled task
+- [ ] API for task management (create/delete/update/get/list)
 - [ ] Release first version 1.0.0.
 
 ### Future
 - [ ] Integrate third-party API for additional functionality.
 - [ ] Conduct a security audit.
+- [ ] UI/UX for better engagement.
 - [ ] Multi Queue
+- [ ] Schedule Task
 - [ ] Ratelimit based consuming
 - [ ] Consume over Webhook
-- [ ] API for task management (create/delete/update/get/list)
 - [ ] Webhook for task events
 - [ ] CI/CD integration to provide the docker image over dockerhub
 - [ ] Standard tasks based on ongoing challenges across industry
 - [ ] SDK for PHP/NodeJS
 - [ ] APM hook for newrelic
 - [ ] Custom Job Signature
+- [ ] Cloud based serverless task execution using api
 
 ### Completed
 - [x] Initial project setup.
@@ -41,7 +40,8 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 - [x] WorkerPool Supported
 - [x] Consumer with concurrency added
 - [x] Consumer task processor based on defined task added
-- [x] CircleCI Integration with generating mock and running unit test 
+- [x] CircleCI Integration with generating mock and running unit test
+- [x] Unit test and code coverage
 
 ## Features
 
@@ -65,7 +65,6 @@ The `Config` struct holds all configuration options for Paota. It includes the f
 - **TaskQueueName**: The name of the task queue. Default value is "paota_tasks".
 - **StoreQueueName**: The name of the storage queue (optional).
 - **AMQP**: Configuration for the AMQP (RabbitMQ) connection. See [AMQP Configuration](#amqp-configuration) for details.
-- **MongoDB**: Configuration for MongoDB integration. See [MongoDB Configuration](#mongodb-configuration) for details.
 
 Here's an example of how you can set up the main configuration using environment variables:
 
