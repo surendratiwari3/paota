@@ -89,11 +89,9 @@ func main() {
 		IgnoreWhenTaskNotRegistered: true,
 	}
 
-	go func() {
-		for i := 0; i < 100000; i++ {
-			newWorkerPool.SendTaskWithContext(context.Background(), printJob)
-		}
-	}()
+	for i := 0; i < 100000; i++ {
+		newWorkerPool.SendTaskWithContext(context.Background(), printJob)
+	}
 
 }
 
