@@ -21,7 +21,7 @@ jobs:
           name: Run Unit Tests
           command: |
             go test -v -coverprofile=coverage.out ./...
-            go tool cover -html=c.out -o coverage.html
+            go tool cover -html=coverage.out -o coverage.html
             mv coverage.html /tmp/artifacts
       - store_artifacts:
           path: /tmp/artifacts
