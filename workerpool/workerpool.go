@@ -149,15 +149,6 @@ func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *task.S
 		return nil, fmt.Errorf("Publish message error: %s", err)
 	}
 
-	// Set initial task state to PENDING
-	/*if w.backend != nil {
-		if err := w.backend.InsertTask(*signature); err != nil {
-			// TODO: error handling as enqueue is already done, if this is happening after retry also
-			// TODO: should we have different queue for backend also to handle such cases
-			return nil, fmt.Errorf("Insert state error: %s", err)
-		}
-	}*/
-
 	return task.NewPendingTaskState(signature), nil
 }
 

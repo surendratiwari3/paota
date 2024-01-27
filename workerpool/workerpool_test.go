@@ -2,11 +2,15 @@ package workerpool
 
 import (
 	"context"
+	"errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/mocks"
+	"github.com/surendratiwari3/paota/task"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestNewWorkerPool(t *testing.T) {
@@ -54,22 +58,8 @@ func TestWorkerPool_RegisterTasks(t *testing.T) {
 	err := wp.RegisterTasks(namedTaskFuncs)
 	assert.Nil(t, err)
 
-	if taskFunc, ok := wp.registeredTasks.Load("taskName"); ok {
-		assert.NotNil(t, taskFunc)
-	} else {
-		t.Error("function is not present in sync map")
-	}
-
 	assert.True(t, wp.IsTaskRegistered("taskName"))
 	assert.False(t, wp.IsTaskRegistered("taskName1"))
-
-	task, err := wp.GetRegisteredTask("taskName")
-	assert.Nil(t, err)
-	assert.NotNil(t, task)
-
-	task, err = wp.GetRegisteredTask("taskName1")
-	assert.NotNil(t, err)
-	assert.Nil(t, task)
 
 	// Create a mock task function
 	mockTaskFuncWithReturn := func() {}
@@ -78,4 +68,114 @@ func TestWorkerPool_RegisterTasks(t *testing.T) {
 	// Register tasks
 	err = wp.RegisterTasks(namedTaskFuncs)
 	assert.NotNil(t, err)
+}
+
+func TestWorkerPool_IsTaskRegistered(t *testing.T) {
+	// Create a new WorkerPool
+	wp := &WorkerPool{
+		registeredTasks: new(sync.Map),
+	}
+
+	// Create a mock task function
+	mockTaskFunc := func() error { return nil }
+	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
+
+	// Register tasks
+	err := wp.RegisterTasks(namedTaskFuncs)
+	assert.Nil(t, err)
+	assert.True(t, wp.IsTaskRegistered("taskName"))
+	assert.False(t, wp.IsTaskRegistered("taskName1"))
+}
+
+func TestWorkerPool_GetRegisteredTask(t *testing.T) {
+	// Create a new WorkerPool
+	wp := &WorkerPool{
+		registeredTasks: new(sync.Map),
+	}
+
+	// Create a mock task function
+	mockTaskFunc := func() error { return nil }
+	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
+
+	// Register tasks
+	err := wp.RegisterTasks(namedTaskFuncs)
+	assert.Nil(t, err)
+
+	task, err := wp.GetRegisteredTask("taskName")
+	assert.Nil(t, err)
+	assert.NotNil(t, task)
+
+	task, err = wp.GetRegisteredTask("taskName1")
+	assert.NotNil(t, err)
+	assert.Nil(t, task)
+}
+
+func TestWorkerPool_SendTaskWithContext(t *testing.T) {
+	mockBroker := &mocks.Broker{}
+	mockBroker.On("Publish", mock.Anything, mock.Anything).Return(nil)
+	// Create a new WorkerPool
+	wp := &WorkerPool{
+		broker: mockBroker,
+	}
+
+	// Create a mock task signature
+	mockSignature := &task.Signature{
+		UUID: "mockUUID",
+	}
+
+	// Send the task with context
+	state, err := wp.SendTaskWithContext(context.Background(), mockSignature)
+
+	// Assert that the task is sent successfully
+	assert.Nil(t, err)
+	assert.NotNil(t, state)
+	assert.Equal(t, "Pending", state.Status)
+
+	mockBrokerFailed := &mocks.Broker{}
+	mockBrokerFailed.On("Publish", mock.Anything, mock.Anything).Return(errors.New("failed"))
+	wp.broker = mockBrokerFailed
+	mockSignature.UUID = ""
+	// Send the task with context
+	state, err = wp.SendTaskWithContext(context.Background(), mockSignature)
+
+	// Assert that the task is sent successfully
+	assert.NotNil(t, err)
+	assert.Nil(t, state)
+}
+
+func TestWorkerPool_Start(t *testing.T) {
+	mockBroker := mocks.NewBroker(t)
+	mockBroker.On("StartConsumer", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("start consumer failed"))
+	wp := &WorkerPool{
+		broker:          mockBroker,
+		started:         true,
+		concurrency:     10,
+		nameSpace:       "test",
+		registeredTasks: new(sync.Map),
+	}
+
+	err := wp.Start()
+	assert.Nil(t, err)
+
+	go func() {
+		wp.started = false
+		err = wp.Start()
+		assert.Nil(t, err)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	wp.Stop()
+	wp.started = false
+	wp.Stop()
+
+	mockBrokerWithOutError := mocks.NewBroker(t)
+	mockBrokerWithOutError.On("StartConsumer", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("start consumer failed"))
+	wp.broker = mockBrokerWithOutError
+	go func() {
+		wp.started = false
+		err = wp.Start()
+		assert.Nil(t, err)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	wp.Stop()
 }
