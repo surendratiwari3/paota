@@ -30,8 +30,6 @@ type WorkerPool struct {
 	concurrency   uint
 	nameSpace     string
 	contextType   reflect.Type
-	taskChannel   chan task.Job
-	ackChannel    chan uint64 // Channel to receive delivery tags for acknowledgments
 }
 
 type WorkerPoolOptions struct {
