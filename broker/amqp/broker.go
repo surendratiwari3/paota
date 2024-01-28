@@ -1,7 +1,6 @@
 package amqp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"github.com/surendratiwari3/paota/errors"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/workergroup"
 	"sync"
 )
 
@@ -129,13 +129,13 @@ func NewAMQPBroker() (broker.Broker, error) {
 	return amqpBroker, nil
 }
 
-func (b *AMQPBroker) processDelivery(workers chan struct{}, d amqp.Delivery, registeredTasks *sync.Map) {
+func (b *AMQPBroker) processDelivery(d amqp.Delivery, worker *workergroup.WorkerGroup) {
 	// get worker from pool (blocks until one is available)
-	<-workers
+	<-worker.WorkersChannel
 	// Consume the task inside a goroutine so multiple tasks
 	// can be processed concurrently
 	go func() {
-		if err := b.taskProcessor(d, registeredTasks); err != nil {
+		if err := b.taskProcessor(d, worker); err != nil {
 			logger.ApplicationLogger.Error("error in task processor, exit", err)
 			// TODO: error handling
 		}
@@ -144,7 +144,7 @@ func (b *AMQPBroker) processDelivery(workers chan struct{}, d amqp.Delivery, reg
 			logger.ApplicationLogger.Error("error while ack")
 		}
 		b.processingWG.Done()
-		workers <- struct{}{}
+		worker.WorkersChannel <- struct{}{}
 	}()
 }
 
@@ -280,7 +280,7 @@ func (b *AMQPBroker) StopConsumer() {
 }
 
 // StartConsumer initializes the AMQP consumer
-func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, registeredTasks *sync.Map) error {
+func (b *AMQPBroker) StartConsumer(worker *workergroup.WorkerGroup) error {
 	queueName := b.getQueueName()
 
 	conn, err := b.getConnection()
@@ -313,7 +313,7 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, re
 		return err
 	}
 
-	deliveries, err := b.createConsumer(channel, queueName, consumerTag)
+	deliveries, err := b.createConsumer(channel, queueName, worker.Namespace)
 	if err != nil {
 		logger.ApplicationLogger.Error("failed to get deliveries, exit", err)
 		return err
@@ -333,7 +333,7 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, re
 			return err
 		case d := <-deliveries:
 			b.processingWG.Add(1)
-			b.processDelivery(workers, d, registeredTasks)
+			b.processDelivery(d, worker)
 		case <-b.stopChannel:
 			b.doneStopChannel <- struct{}{}
 			logger.ApplicationLogger.Warning("stop request in consumer, exit")
@@ -345,7 +345,7 @@ func (b *AMQPBroker) StartConsumer(consumerTag string, workers chan struct{}, re
 }
 
 // consumerDeliveryHandler
-func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, registeredTask *sync.Map) error {
+func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, worker *workergroup.WorkerGroup) error {
 	if len(delivery.Body) == 0 {
 		logger.ApplicationLogger.Error("empty message, return")
 		delivery.Nack(true, false)    // multiple, requeue
@@ -354,29 +354,12 @@ func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, registeredTask *sync.
 
 	var multiple, requeue = false, false
 
-	// Unmarshal message body into signature struct
-	signature := new(task.Signature)
-	decoder := json.NewDecoder(bytes.NewReader(delivery.Body))
-	decoder.UseNumber()
-	if err := decoder.Decode(signature); err != nil {
+	signature, err := task.BytesToSignature(delivery.Body)
+	if err != nil {
 		logger.ApplicationLogger.Error("decode error in message, return")
 		delivery.Nack(multiple, requeue)
 		return err
 	}
 
-	// Check if the task is registered
-	if taskFunc, ok := registeredTask.Load(signature.Name); ok {
-		if fn, ok := taskFunc.(func(*task.Signature) error); ok {
-			if err := fn(signature); err != nil {
-				logger.ApplicationLogger.Error("task failed to execute")
-				//TODO: retry
-			}
-		}
-		logger.ApplicationLogger.Error("invalid task function")
-		// Handle the case where the value in registeredTask is not a function
-		return errors.ErrTaskMustBeFunc
-	}
-
-	logger.ApplicationLogger.Error("task is not registered")
-	return errors.ErrTaskNotRegistered
+	return worker.Processor(signature)
 }

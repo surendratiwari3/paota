@@ -53,7 +53,10 @@ func main() {
 	}
 	logger.ApplicationLogger.Info("Worker is also started")
 
-	newWorkerPool.Start()
+	err = newWorkerPool.Start()
+	if err != nil {
+		logger.ApplicationLogger.Error("error while starting worker")
+	}
 }
 
 func Print(arg *task.Signature) error {

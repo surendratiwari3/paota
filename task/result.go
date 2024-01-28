@@ -19,3 +19,27 @@ func NewPendingTaskState(task *Signature) *State {
 	}
 	return &TaskState
 }
+
+func NewCompleteTaskState(task *Signature) *State {
+	TaskState := State{
+		Status:  "Complete",
+		Request: *task,
+	}
+	return &TaskState
+}
+
+func NewFailedTaskState(task *Signature) *State {
+	TaskState := State{
+		Status:  "Failed",
+		Request: *task,
+	}
+	return &TaskState
+}
+
+func NewCancelledTaskState(task *Signature) *State {
+	TaskState := State{
+		Status:  "Cancelled",
+		Request: *task,
+	}
+	return &TaskState
+}

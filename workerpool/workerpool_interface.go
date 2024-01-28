@@ -10,7 +10,6 @@ import (
 type Pool interface {
 	GetBackend() store.Backend
 	GetBroker() broker.Broker
-	GetRegisteredTask(name string) (interface{}, error)
 	IsTaskRegistered(name string) bool
 	RegisterTasks(namedTaskFuncs map[string]interface{}) error
 	SetBackend(backend store.Backend)

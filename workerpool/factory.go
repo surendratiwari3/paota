@@ -6,11 +6,14 @@ import (
 	"github.com/surendratiwari3/paota/config"
 	appErrors "github.com/surendratiwari3/paota/errors"
 	"github.com/surendratiwari3/paota/logger"
+	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/task/registrar"
 )
 
 type IFactory interface {
 	CreateBroker() (broker.Broker, error)
 	CreateStore() error
+	CreateTaskRegistrar() task.TaskRegistrarInterface
 }
 
 type Factory struct{}
@@ -46,4 +49,8 @@ func (bf *Factory) CreateStore() error {
 	default:
 		return appErrors.ErrUnsupportedStore
 	}
+}
+
+func (bf *Factory) CreateTaskRegistrar() task.TaskRegistrarInterface {
+	return registrar.NewDefaultTaskRegistrar()
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/store"
 	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/workergroup"
 	"os"
 	"os/signal"
 	"reflect"
@@ -19,19 +20,18 @@ import (
 
 // WorkerPool stores all configuration for tasks workers
 type WorkerPool struct {
-	backend              store.Backend
-	broker               broker.Broker
-	factory              IFactory
-	config               *config.Config
-	registeredTasks      *sync.Map
-	registeredTasksCount uint
-	started              bool
-	workerPoolID         string
-	concurrency          uint
-	nameSpace            string
-	contextType          reflect.Type
-	taskChannel          chan task.Job
-	ackChannel           chan uint64 // Channel to receive delivery tags for acknowledgments
+	backend       store.Backend
+	broker        broker.Broker
+	factory       IFactory
+	config        *config.Config
+	taskRegistrar task.TaskRegistrarInterface
+	started       bool
+	workerPoolID  string
+	concurrency   uint
+	nameSpace     string
+	contextType   reflect.Type
+	taskChannel   chan task.Job
+	ackChannel    chan uint64 // Channel to receive delivery tags for acknowledgments
 }
 
 type WorkerPoolOptions struct {
@@ -51,14 +51,13 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 	workerPoolId := uuid.New().String()
 
 	workerPool := &WorkerPool{
-		concurrency:     concurrency,
-		config:          cnf,
-		contextType:     reflect.TypeOf(ctx),
-		nameSpace:       nameSpace,
-		registeredTasks: new(sync.Map),
-		started:         false,
-		workerPoolID:    workerPoolId,
-		factory:         globalFactory,
+		concurrency:  concurrency,
+		config:       cnf,
+		contextType:  reflect.TypeOf(ctx),
+		nameSpace:    nameSpace,
+		started:      false,
+		workerPoolID: workerPoolId,
+		factory:      globalFactory,
 	}
 
 	if workerPool.factory == nil {
@@ -78,6 +77,13 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 		logger.ApplicationLogger.Error("store creation failed", err)
 		return nil, err
 	}
+
+	taskRegistrar := workerPool.factory.CreateTaskRegistrar()
+	if taskRegistrar == nil {
+		logger.ApplicationLogger.Error("task registrar creation failed")
+		return nil, errors.New("failed to start the worker pool")
+	}
+	workerPool.taskRegistrar = taskRegistrar
 
 	return workerPool, nil
 }
@@ -107,36 +113,6 @@ func (wp *WorkerPool) SetBackend(backend store.Backend) {
 	wp.backend = backend
 }
 
-// RegisterTasks registers all tasks at once
-func (wp *WorkerPool) RegisterTasks(namedTaskFuncs map[string]interface{}) error {
-	for _, taskFunc := range namedTaskFuncs {
-		if err := task.ValidateTask(taskFunc); err != nil {
-			return err
-		}
-	}
-
-	for k, v := range namedTaskFuncs {
-		wp.registeredTasksCount = wp.registeredTasksCount + 1
-		wp.registeredTasks.Store(k, v)
-	}
-	return nil
-}
-
-// IsTaskRegistered returns true if the task name is registered with this broker
-func (wp *WorkerPool) IsTaskRegistered(name string) bool {
-	_, ok := wp.registeredTasks.Load(name)
-	return ok
-}
-
-// GetRegisteredTask returns registered task by name
-func (wp *WorkerPool) GetRegisteredTask(name string) (interface{}, error) {
-	taskFunc, ok := wp.registeredTasks.Load(name)
-	if !ok {
-		return nil, fmt.Errorf("Task not registered error: %s", name)
-	}
-	return taskFunc, nil
-}
-
 // SendTaskWithContext will inject the trace context in the signature headers before publishing it
 func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *task.Signature) (*task.State, error) {
 	// Auto generate a UUID if not set already
@@ -162,7 +138,6 @@ func validateContextType(ctx interface{}) error {
 }
 
 func (wp *WorkerPool) Start() error {
-	logger.ApplicationLogger.Info("worker pool called")
 	if wp.started {
 		return nil
 	}
@@ -173,9 +148,8 @@ func (wp *WorkerPool) Start() error {
 	var signalWG sync.WaitGroup
 	go func() {
 		for {
-			workers := make(chan struct{}, wp.concurrency)
-			wp.initializeWorkers(workers, wp.concurrency)
-			err := wp.broker.StartConsumer(wp.nameSpace, workers, wp.registeredTasks)
+			workers := workergroup.NewWorkerGroup(wp.concurrency, wp.taskRegistrar, wp.nameSpace)
+			err := wp.broker.StartConsumer(workers)
 			if err != nil {
 				logger.ApplicationLogger.Error("consumer failed to start", err)
 				return
@@ -196,21 +170,23 @@ func (wp *WorkerPool) Start() error {
 	return nil
 }
 
+func (wp *WorkerPool) RegisterTasks(namedTaskFuncs map[string]interface{}) error {
+	return wp.taskRegistrar.RegisterTasks(namedTaskFuncs)
+}
+
+func (wp *WorkerPool) IsTaskRegistered(name string) bool {
+	return wp.taskRegistrar.IsTaskRegistered(name)
+}
+
 // Stop stops the workers and associated processes.
 func (wp *WorkerPool) Stop() {
 	if !wp.started {
 		return
 	}
 
-	if wp.registeredTasksCount == 0 {
+	if wp.taskRegistrar.GetRegisteredTaskCount() == 0 {
 		return
 	}
 	wp.started = false
 	wp.broker.StopConsumer()
-}
-
-func (wp *WorkerPool) initializeWorkers(workers chan struct{}, concurrency uint) {
-	for i := uint(0); i < concurrency; i++ {
-		workers <- struct{}{}
-	}
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/mocks"
 	"github.com/surendratiwari3/paota/task"
-	"sync"
 	"testing"
 	"time"
 )
@@ -16,6 +15,7 @@ import (
 func TestNewWorkerPool(t *testing.T) {
 	// Mock the broker for testing
 	mockBroker := &mocks.Broker{}
+	mockTaskRegistrar := &mocks.TaskRegistrarInterface{}
 	// Create a mock AMQPAdapter with a valid config
 	mockConfigProvider := new(mocks.ConfigProvider)
 	mockConfigProvider.On("GetConfig").Return(&config.Config{
@@ -31,6 +31,7 @@ func TestNewWorkerPool(t *testing.T) {
 	mockFactory := new(mocks.IFactory)
 	mockFactory.On("CreateBroker").Return(mockBroker, nil)
 	mockFactory.On("CreateStore").Return(nil)
+	mockFactory.On("CreateTaskRegistrar").Return(mockTaskRegistrar)
 	config.SetConfigProvider(mockConfigProvider)
 
 	globalFactory = mockFactory
@@ -42,72 +43,6 @@ func TestNewWorkerPool(t *testing.T) {
 	if pool == nil {
 		t.Error("Broker not created correctly", err)
 	}
-}
-
-func TestWorkerPool_RegisterTasks(t *testing.T) {
-	// Create a new WorkerPool
-	wp := &WorkerPool{
-		registeredTasks: new(sync.Map),
-	}
-
-	// Create a mock task function
-	mockTaskFunc := func() error { return nil }
-	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
-
-	// Register tasks
-	err := wp.RegisterTasks(namedTaskFuncs)
-	assert.Nil(t, err)
-
-	assert.True(t, wp.IsTaskRegistered("taskName"))
-	assert.False(t, wp.IsTaskRegistered("taskName1"))
-
-	// Create a mock task function
-	mockTaskFuncWithReturn := func() {}
-	namedTaskFuncs = map[string]interface{}{"taskName": mockTaskFuncWithReturn}
-
-	// Register tasks
-	err = wp.RegisterTasks(namedTaskFuncs)
-	assert.NotNil(t, err)
-}
-
-func TestWorkerPool_IsTaskRegistered(t *testing.T) {
-	// Create a new WorkerPool
-	wp := &WorkerPool{
-		registeredTasks: new(sync.Map),
-	}
-
-	// Create a mock task function
-	mockTaskFunc := func() error { return nil }
-	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
-
-	// Register tasks
-	err := wp.RegisterTasks(namedTaskFuncs)
-	assert.Nil(t, err)
-	assert.True(t, wp.IsTaskRegistered("taskName"))
-	assert.False(t, wp.IsTaskRegistered("taskName1"))
-}
-
-func TestWorkerPool_GetRegisteredTask(t *testing.T) {
-	// Create a new WorkerPool
-	wp := &WorkerPool{
-		registeredTasks: new(sync.Map),
-	}
-
-	// Create a mock task function
-	mockTaskFunc := func() error { return nil }
-	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
-
-	// Register tasks
-	err := wp.RegisterTasks(namedTaskFuncs)
-	assert.Nil(t, err)
-
-	task, err := wp.GetRegisteredTask("taskName")
-	assert.Nil(t, err)
-	assert.NotNil(t, task)
-
-	task, err = wp.GetRegisteredTask("taskName1")
-	assert.NotNil(t, err)
-	assert.Nil(t, task)
 }
 
 func TestWorkerPool_SendTaskWithContext(t *testing.T) {
@@ -143,15 +78,23 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 	assert.Nil(t, state)
 }
 
-func TestWorkerPool_Start(t *testing.T) {
+func TestWorkerPool_StartWithBrokerInError(t *testing.T) {
 	mockBroker := mocks.NewBroker(t)
+	mockTaskReg := mocks.NewTaskRegistrarInterface(t)
 	mockBroker.On("StartConsumer", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("start consumer failed"))
+	mockBroker.On("StopConsumer").Return()
+	mockFactory := new(mocks.IFactory)
+	mockFactory.On("CreateBroker").Return(mockBroker, nil)
+	mockFactory.On("CreateStore").Return(nil)
+	mockFactory.On("CreateTaskRegistrar").Return(mockTaskReg)
+	mockTaskReg.On("GetRegisteredTaskCount").Return(uint(10))
 	wp := &WorkerPool{
-		broker:          mockBroker,
-		started:         true,
-		concurrency:     10,
-		nameSpace:       "test",
-		registeredTasks: new(sync.Map),
+		broker:        mockBroker,
+		started:       true,
+		concurrency:   10,
+		nameSpace:     "test",
+		taskRegistrar: mockTaskReg,
+		factory:       mockFactory,
 	}
 
 	err := wp.Start()
@@ -166,13 +109,34 @@ func TestWorkerPool_Start(t *testing.T) {
 	wp.Stop()
 	wp.started = false
 	wp.Stop()
+}
 
+func TestWorkerPool_StartWithBroker(t *testing.T) {
 	mockBrokerWithOutError := mocks.NewBroker(t)
+	mockTaskReg := mocks.NewTaskRegistrarInterface(t)
+
+	mockFactory := new(mocks.IFactory)
+	mockFactory.On("CreateBroker").Return(mockBrokerWithOutError, nil)
+	mockFactory.On("CreateStore").Return(nil)
+	mockFactory.On("CreateTaskRegistrar").Return(mockTaskReg)
+	mockTaskReg.On("GetRegisteredTaskCount").Return(uint(10))
+
 	mockBrokerWithOutError.On("StartConsumer", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("start consumer failed"))
+	mockBrokerWithOutError.On("StopConsumer").Return()
+
+	wp := &WorkerPool{
+		broker:        mockBrokerWithOutError,
+		started:       false,
+		concurrency:   10,
+		nameSpace:     "test",
+		taskRegistrar: mockTaskReg,
+		factory:       mockFactory,
+	}
+
 	wp.broker = mockBrokerWithOutError
 	go func() {
 		wp.started = false
-		err = wp.Start()
+		err := wp.Start()
 		assert.Nil(t, err)
 	}()
 

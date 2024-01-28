@@ -1,7 +1,9 @@
 package task
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
 	"reflect"
@@ -51,4 +53,18 @@ func NewSignature(name string, args []Arg) (*Signature, error) {
 		Name: name,
 		Args: args,
 	}, nil
+}
+
+func BytesToSignature(data []byte) (*Signature, error) {
+	// Assuming that data contains a serialized JSON representation of a task.Signature
+	var signature Signature
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+
+	if err := decoder.Decode(&signature); err != nil {
+		return nil, fmt.Errorf("failed to decode signature: %s", err)
+	}
+
+	return &signature, nil
 }
