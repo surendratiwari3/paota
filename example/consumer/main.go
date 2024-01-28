@@ -12,8 +12,10 @@ import (
 )
 
 func main() {
+	logrusLog := logrus.StandardLogger()
+	logrusLog.SetFormatter(&logrus.JSONFormatter{})
+	logger.ApplicationLogger = logrusLog
 
-	logger.ApplicationLogger = logrus.StandardLogger()
 	cnf := config.Config{
 		Broker: "amqp",
 		//Store:         "null",
