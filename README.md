@@ -43,7 +43,7 @@ Paota is designed to provide high availability and support horizontal scaling. B
 
 In summary, Paota facilitates the asynchronous processing of tasks in a distributed environment, allowing for efficient utilization of resources, high availability, and horizontal scaling. It is a versatile tool for building scalable and responsive systems that can handle background and asynchronous workloads.
 
-## paota To-Do List
+## Quest for Completion
 
 ### In Progress
 - [ ] Middleware for task
@@ -80,12 +80,6 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 - [x] Consumer task processor based on defined task added
 - [x] CircleCI Integration with generating mock and running unit test
 - [x] Unit test and code coverage
-
-## Features
-
-- **User-Defined Tasks:** Users can define their own tasks.
-- **Message Broker:** Utilizes RabbitMQ for task queuing.
-- **Backend Storage:** for storing and updating task information. (Optional)
 
 ## Getting Started
 
