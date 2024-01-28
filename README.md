@@ -363,9 +363,13 @@ mockery --all --output=mocks
 ## Benchmarks
 
 ### Benchmark Configuration
-The jobs are almost no-op jobs: they simply increment an atomic counter
+
+The jobs are almost no-op jobs: they simply return nil.
+
 1 Core Cpu
+
 8 GB Ram
+
 Rabbitmq , Consumer and Publisher running on same server
 
 ### Running the Benchmarks
