@@ -363,20 +363,22 @@ mockery --all --output=mocks
 ## Benchmarks
 
 ### Benchmark Configuration
-Information about parameters and configurations for each benchmark will be added in the future.
+The jobs are almost no-op jobs: they simply increment an atomic counter
+1 Core Cpu
+8 GB Ram
+Rabbitmq , Consumer and Publisher running on same server
 
 ### Running the Benchmarks
-Instructions on how to run the benchmarks will be provided once benchmarks are available.
+benchmark test are available inside bench directory. it can be run like:
 
-### Interpreting Results
-Guidance on how to interpret benchmark results and metrics will be added.
-
-### Comparison and Analysis (Future)
-Plans for adding new benchmarks and criteria for doing so will be discussed in this section.
+```bash
+go test -bench . -count 10 > 10_benchmark_test.txt
+go install golang.org/x/perf/cmd/benchstat@latest
+benchstat 10_benchmark_test.txt
+```
 
 ### Conclusion
-A summary of the importance of benchmarking and plans for future benchmarking activities will be provided.
-
+We have acheived benchmarking of 300 request per second for publisher and consumer (concurrency=10 and PrefetchCount=100). If you want to achieve more throughput concurrency can be increased to any extent. 
 
 Thank you for flying Paota!
 
