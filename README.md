@@ -5,6 +5,44 @@ An efficient Go task queue package, facilitating the seamless orchestration and 
 ## Architecture
 ![Architecture Diagram](https://github.com/surendratiwari3/paota/blob/main/docs/images/paota_arch.png?raw=true)
 
+## Overview
+
+Below is a high-level overview of how Paota works:
+
+### 1. Publisher
+
+The process or component responsible for generating tasks and putting them onto the task queue. This could be any part of your system that needs to perform background or asynchronous work.
+
+### 2. Task Queue
+
+Paota uses a task queue as a central mechanism for managing and distributing tasks. The task queue holds the tasks until they are picked up by consumers for processing. The queue serves as a buffer, decoupling the production of tasks from their consumption.
+
+### 3. Broker
+
+The broker is a service or component responsible for managing the task queue. It receives tasks from the publisher and makes them available for consumption by consumers. The broker ensures that tasks are delivered reliably and efficiently to the consumers.
+
+### 4. Consumer
+
+The consumer is a process or component that pulls tasks from the task queue and executes them. Paota allows for multiple consumers to run concurrently, enabling parallel processing of tasks. Consumers can be distributed across multiple machines for horizontal scaling.
+
+### 5. Worker Pool
+
+Each consumer runs a worker pool, which is a group of worker processes that execute tasks concurrently. The worker pool allows for efficient utilization of resources by processing multiple tasks simultaneously. The number of workers in a pool can be adjusted based on the available resources and workload.
+
+### 6. Task Processing
+
+Tasks are processed by the worker pool concurrently. Each task represents a unit of work that needs to be performed asynchronously. The results of the task execution can be used to update the state of the system or trigger additional actions.
+
+### 7. Storage
+
+Paota may use storage to persist task-related information, ensuring durability and fault tolerance. This can include storing task state, metadata, and other relevant information. The choice of storage can vary, and Paota supports different storage backends.
+
+### 8. High Availability and Horizontal Scaling
+
+Paota is designed to provide high availability and support horizontal scaling. By distributing tasks across multiple consumers and worker pools, the system can handle increased workloads and provide fault tolerance. Additionally, the use of multiple brokers and storage solutions contributes to the overall resilience of the system.
+
+In summary, Paota facilitates the asynchronous processing of tasks in a distributed environment, allowing for efficient utilization of resources, high availability, and horizontal scaling. It is a versatile tool for building scalable and responsive systems that can handle background and asynchronous workloads.
+
 ## paota To-Do List
 
 ### In Progress
