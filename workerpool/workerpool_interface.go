@@ -3,8 +3,8 @@ package workerpool
 import (
 	"context"
 	"github.com/surendratiwari3/paota/broker"
+	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/store"
-	"github.com/surendratiwari3/paota/task"
 )
 
 type Pool interface {
@@ -16,5 +16,5 @@ type Pool interface {
 	SetBroker(broker broker.Broker)
 	Start() error
 	Stop()
-	SendTaskWithContext(ctx context.Context, signature *task.Signature) (*task.State, error)
+	SendTaskWithContext(ctx context.Context, signature *schema.Signature) (*schema.State, error)
 }

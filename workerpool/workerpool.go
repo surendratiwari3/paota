@@ -7,9 +7,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/surendratiwari3/paota/broker"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/factory"
 	"github.com/surendratiwari3/paota/logger"
+	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/store"
 	"github.com/surendratiwari3/paota/task"
+
 	"github.com/surendratiwari3/paota/workergroup"
 	"os"
 	"os/signal"
@@ -22,7 +25,7 @@ import (
 type WorkerPool struct {
 	backend       store.Backend
 	broker        broker.Broker
-	factory       IFactory
+	factory       factory.IFactory
 	config        *config.Config
 	taskRegistrar task.TaskRegistrarInterface
 	started       bool
@@ -30,7 +33,13 @@ type WorkerPool struct {
 	concurrency   uint
 	nameSpace     string
 	contextType   reflect.Type
+	workerGroup   workergroup.WorkerGroupInterface
 }
+
+// globalFactory defined just for unit test cases
+var (
+	globalFactory factory.IFactory
+)
 
 type WorkerPoolOptions struct {
 }
@@ -59,7 +68,7 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 	}
 
 	if workerPool.factory == nil {
-		workerPool.factory = &Factory{}
+		workerPool.factory = &factory.Factory{}
 	}
 
 	factoryBroker, err := workerPool.factory.CreateBroker()
@@ -82,6 +91,8 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 		return nil, errors.New("failed to start the worker pool")
 	}
 	workerPool.taskRegistrar = taskRegistrar
+
+	workerPool.workerGroup = workergroup.NewWorkerGroup(concurrency, taskRegistrar, nameSpace)
 
 	return workerPool, nil
 }
@@ -112,7 +123,7 @@ func (wp *WorkerPool) SetBackend(backend store.Backend) {
 }
 
 // SendTaskWithContext will inject the trace context in the signature headers before publishing it
-func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *task.Signature) (*task.State, error) {
+func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *schema.Signature) (*schema.State, error) {
 	// Auto generate a UUID if not set already
 	if signature.UUID == "" {
 		taskID := uuid.New().String()
@@ -123,7 +134,7 @@ func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *task.S
 		return nil, fmt.Errorf("Publish message error: %s", err)
 	}
 
-	return task.NewPendingTaskState(signature), nil
+	return schema.NewPendingTaskState(signature), nil
 }
 
 // validateContextType will panic if context is invalid
@@ -146,8 +157,7 @@ func (wp *WorkerPool) Start() error {
 	var signalWG sync.WaitGroup
 	go func() {
 		for {
-			workers := workergroup.NewWorkerGroup(wp.concurrency, wp.taskRegistrar, wp.nameSpace)
-			err := wp.broker.StartConsumer(workers)
+			err := wp.broker.StartConsumer(context.Background(), wp.workerGroup)
 			if err != nil {
 				logger.ApplicationLogger.Error("consumer failed to start", err)
 				return

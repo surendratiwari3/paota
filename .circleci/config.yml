@@ -16,7 +16,7 @@ jobs:
           command: export PATH=$PATH:$GOPATH/bin
       - run:
           name: Generate Mocks
-          command: mockery --all --output=mocks
+          command: mockery --inpackage --all
       - run:
           name: Run Unit Tests
           command: |

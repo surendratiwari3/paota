@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/task"
-
+	"github.com/surendratiwari3/paota/schema"
 	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/workerpool"
@@ -30,6 +30,7 @@ func main() {
 			BindingKey:         "paota_task_binding_key",
 			PrefetchCount:      100,
 			ConnectionPoolSize: 10,
+			DelayedQueue:       "delay_test",
 		},
 	}
 	err := config.GetConfigProvider().SetApplicationConfig(cnf)
@@ -81,24 +82,23 @@ func main() {
 		//
 	}
 
-	printJob := &task.Signature{
+	printJob := &schema.Signature{
 		Name: "Print",
-		Args: []task.Arg{
+		Args: []schema.Arg{
 			{
 				Type:  "string",
 				Value: string(userJSON),
 			},
 		},
+		RetryCount:                  10,
 		IgnoreWhenTaskNotRegistered: true,
 	}
 
-	for i := 0; i < 100000; i++ {
-		newWorkerPool.SendTaskWithContext(context.Background(), printJob)
-	}
+	newWorkerPool.SendTaskWithContext(context.Background(), printJob)
 
 }
 
-func Print(arg *task.Signature) error {
-	logger.ApplicationLogger.Info("Print Function Completed")
-	return nil
+func Print(arg *schema.Signature) error {
+	logger.ApplicationLogger.Info("Print Function In Error")
+	return errors.New("checking retry")
 }

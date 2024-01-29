@@ -5,13 +5,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/errors"
-	"github.com/surendratiwari3/paota/mocks"
 	"testing"
 )
 
 func TestNewAMQPAdapterWithNilConfig(t *testing.T) {
 	// Create a mock ConfigProvider with a nil config
-	mockConfigProvider := new(mocks.ConfigProvider)
+	mockConfigProvider := new(config.MockConfigProvider)
 	mockConfigProvider.On("GetConfig").Return(nil)
 
 	// Set the mock ConfigProvider for testing
@@ -29,7 +28,7 @@ func TestNewAMQPAdapterWithNilConfig(t *testing.T) {
 
 func TestNewAMQPAdapterWithValidConfig(t *testing.T) {
 	// Create a mock ConfigProvider with a valid config
-	mockConfigProvider := new(mocks.ConfigProvider)
+	mockConfigProvider := new(config.MockConfigProvider)
 	mockConfig := &config.Config{AMQP: &config.AMQPConfig{}}
 	mockConfigProvider.On("GetConfig").Return(mockConfig)
 
@@ -74,7 +73,7 @@ func TestCreateConnection_ConnectionRefused(t *testing.T) {
 
 func TestCreateConnection_NilAMQPConfig(t *testing.T) {
 	// Create a mock AMQPAdapter with a valid config
-	mockConfigProvider := new(mocks.ConfigProvider)
+	mockConfigProvider := new(config.MockConfigProvider)
 	mockConfigProvider.On("GetConfig").Return(&config.Config{}, nil)
 
 	config.SetConfigProvider(mockConfigProvider)
@@ -91,7 +90,7 @@ func TestCreateConnection_NilAMQPConfig(t *testing.T) {
 
 func TestCreateConnectionPool_ConnectionError(t *testing.T) {
 	// Create a mock AMQPAdapter with a valid config
-	mockConfigProvider := new(mocks.ConfigProvider)
+	mockConfigProvider := new(config.MockConfigProvider)
 	mockConfigProvider.On("GetConfig").Return(&config.Config{
 		AMQP: &config.AMQPConfig{
 			Url:                "amqp://localhost:5672",
@@ -108,7 +107,7 @@ func TestCreateConnectionPool_ConnectionError(t *testing.T) {
 
 func TestCreateConnectionPool_InvalidConnectionPoolSize(t *testing.T) {
 	// Create a mock AMQPAdapter with a valid config
-	mockConfigProvider := new(mocks.ConfigProvider)
+	mockConfigProvider := new(config.MockConfigProvider)
 	mockConfigProvider.On("GetConfig").Return(&config.Config{
 		AMQP: &config.AMQPConfig{
 			Url:                "amqp://localhost:5672",

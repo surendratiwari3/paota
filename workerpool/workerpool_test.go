@@ -5,8 +5,10 @@ import (
 	"errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/surendratiwari3/paota/broker"
 	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/mocks"
+	"github.com/surendratiwari3/paota/factory"
+	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/task"
 	"testing"
 	"time"
@@ -14,10 +16,10 @@ import (
 
 func TestNewWorkerPool(t *testing.T) {
 	// Mock the broker for testing
-	mockBroker := &mocks.Broker{}
-	mockTaskRegistrar := &mocks.TaskRegistrarInterface{}
+	mockBroker := broker.NewMockBroker(t)
+	mockTaskRegistrar := task.NewMockTaskRegistrarInterface(t)
 	// Create a mock AMQPAdapter with a valid config
-	mockConfigProvider := new(mocks.ConfigProvider)
+	mockConfigProvider := new(config.MockConfigProvider)
 	mockConfigProvider.On("GetConfig").Return(&config.Config{
 		Broker:        "amqp",
 		TaskQueueName: "test",
@@ -28,7 +30,7 @@ func TestNewWorkerPool(t *testing.T) {
 		},
 	}, nil)
 
-	mockFactory := new(mocks.IFactory)
+	mockFactory := new(factory.MockIFactory)
 	mockFactory.On("CreateBroker").Return(mockBroker, nil)
 	mockFactory.On("CreateStore").Return(nil)
 	mockFactory.On("CreateTaskRegistrar").Return(mockTaskRegistrar)
@@ -46,7 +48,7 @@ func TestNewWorkerPool(t *testing.T) {
 }
 
 func TestWorkerPool_SendTaskWithContext(t *testing.T) {
-	mockBroker := &mocks.Broker{}
+	mockBroker := &broker.MockBroker{}
 	mockBroker.On("Publish", mock.Anything, mock.Anything).Return(nil)
 	// Create a new WorkerPool
 	wp := &WorkerPool{
@@ -54,7 +56,7 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 	}
 
 	// Create a mock task signature
-	mockSignature := &task.Signature{
+	mockSignature := &schema.Signature{
 		UUID: "mockUUID",
 	}
 
@@ -66,7 +68,7 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 	assert.NotNil(t, state)
 	assert.Equal(t, "Pending", state.Status)
 
-	mockBrokerFailed := &mocks.Broker{}
+	mockBrokerFailed := &broker.MockBroker{}
 	mockBrokerFailed.On("Publish", mock.Anything, mock.Anything).Return(errors.New("failed"))
 	wp.broker = mockBrokerFailed
 	mockSignature.UUID = ""
@@ -79,11 +81,12 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 }
 
 func TestWorkerPool_StartWithBrokerInError(t *testing.T) {
-	mockBroker := mocks.NewBroker(t)
-	mockTaskReg := mocks.NewTaskRegistrarInterface(t)
+	mockBroker := broker.NewMockBroker(t)
+	mockTaskReg := task.NewMockTaskRegistrarInterface(t)
+
 	mockBroker.On("StartConsumer", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("start consumer failed"))
 	mockBroker.On("StopConsumer").Return()
-	mockFactory := new(mocks.IFactory)
+	mockFactory := new(factory.MockIFactory)
 	mockFactory.On("CreateBroker").Return(mockBroker, nil)
 	mockFactory.On("CreateStore").Return(nil)
 	mockFactory.On("CreateTaskRegistrar").Return(mockTaskReg)
@@ -112,10 +115,10 @@ func TestWorkerPool_StartWithBrokerInError(t *testing.T) {
 }
 
 func TestWorkerPool_StartWithBroker(t *testing.T) {
-	mockBrokerWithOutError := mocks.NewBroker(t)
-	mockTaskReg := mocks.NewTaskRegistrarInterface(t)
+	mockBrokerWithOutError := broker.NewMockBroker(t)
+	mockTaskReg := task.NewMockTaskRegistrarInterface(t)
 
-	mockFactory := new(mocks.IFactory)
+	mockFactory := new(factory.MockIFactory)
 	mockFactory.On("CreateBroker").Return(mockBrokerWithOutError, nil)
 	mockFactory.On("CreateStore").Return(nil)
 	mockFactory.On("CreateTaskRegistrar").Return(mockTaskReg)
