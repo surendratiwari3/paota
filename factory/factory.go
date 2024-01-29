@@ -1,4 +1,4 @@
-package workerpool
+package factory
 
 import (
 	"github.com/surendratiwari3/paota/broker"

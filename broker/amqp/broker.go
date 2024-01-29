@@ -10,9 +10,11 @@ import (
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/errors"
 	"github.com/surendratiwari3/paota/logger"
-	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/provider"
+	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/workergroup"
 	"sync"
+	"time"
 )
 
 // AMQPBroker represents an AMQP broker
@@ -25,46 +27,7 @@ type AMQPBroker struct {
 	amqpErrorChannel <-chan *amqp.Error
 	stopChannel      chan struct{}
 	doneStopChannel  chan struct{}
-}
-
-func (b *AMQPBroker) createAmqpChannel(conn *amqp.Connection) (*amqp.Channel, error) {
-	return conn.Channel()
-}
-
-func (b *AMQPBroker) createConsumer(channel *amqp.Channel, queueName, consumerTag string) (<-chan amqp.Delivery, error) {
-	return channel.Consume(
-		queueName,   // queue
-		consumerTag, // consumer tag
-		false,       // auto-ack
-		false,       // exclusive
-		false,       // no-local
-		false,       // no-wait
-		nil,         // arguments
-	)
-}
-
-func (b *AMQPBroker) declareExchange(channel *amqp.Channel) error {
-	return channel.ExchangeDeclare(
-		b.Config.AMQP.Exchange,     // exchange name
-		b.Config.AMQP.ExchangeType, // exchange type
-		true,                       // durable
-		false,                      // auto-deleted
-		false,                      // internal
-		false,                      // no-wait
-		nil,                        // arguments
-	)
-}
-
-func (b *AMQPBroker) declareQueue(channel *amqp.Channel) error {
-	_, err := channel.QueueDeclare(
-		b.Config.TaskQueueName, // queue name
-		true,                   // durable
-		false,                  // delete when unused
-		false,                  // exclusive
-		false,                  // no-wait
-		nil,                    // arguments
-	)
-	return err
+	amqpProvider     provider.AmqpProviderInterface
 }
 
 func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
@@ -78,17 +41,16 @@ func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
 	return nil, nil
 }
 
-func (b *AMQPBroker) getQueueName() string {
-	return config.GetConfigProvider().GetConfig().TaskQueueName
-}
-
 // getRoutingKey gets the routing key from the signature
 func (b *AMQPBroker) getRoutingKey() string {
+	if b.Config.AMQP.BindingKey == "" {
+		return b.getTaskQueue()
+	}
 	if b.isDirectExchange() {
 		return b.Config.AMQP.BindingKey
 	}
 
-	return b.Config.TaskQueueName
+	return b.getTaskQueue()
 }
 
 // isDirectExchange checks if the exchange type is direct
@@ -114,6 +76,8 @@ func NewAMQPBroker() (broker.Broker, error) {
 
 	amqpBroker.amqpAdapter = adapter.NewAMQPAdapter()
 
+	amqpBroker.amqpProvider = provider.NewAmqpProvider()
+
 	err := amqpBroker.amqpAdapter.CreateConnectionPool()
 	if err != nil {
 		logger.ApplicationLogger.Error("failed to created connection pool, return", err)
@@ -129,38 +93,22 @@ func NewAMQPBroker() (broker.Broker, error) {
 	return amqpBroker, nil
 }
 
-func (b *AMQPBroker) processDelivery(d amqp.Delivery, worker *workergroup.WorkerGroup) {
+func (b *AMQPBroker) processDelivery(ctx context.Context, d amqp.Delivery, workerGroup workergroup.WorkerGroupInterface) {
 	// get worker from pool (blocks until one is available)
-	<-worker.WorkersChannel
+	workerGroup.GetWorker()
 	// Consume the task inside a goroutine so multiple tasks
 	// can be processed concurrently
 	go func() {
-		if err := b.taskProcessor(d, worker); err != nil {
+		if err := b.taskProcessor(ctx, d, workerGroup); err != nil {
 			logger.ApplicationLogger.Error("error in task processor, exit", err)
-			// TODO: error handling
-		}
-		err := d.Ack(false)
-		if err != nil {
-			logger.ApplicationLogger.Error("error while ack")
 		}
 		b.processingWG.Done()
-		worker.WorkersChannel <- struct{}{}
+		workerGroup.AddWorker()
 	}()
 }
 
-func (b *AMQPBroker) queueExchangeBind(channel *amqp.Channel) error {
-	// Bind the queue to the exchange
-	return channel.QueueBind(
-		b.Config.TaskQueueName,   // queue name
-		b.Config.AMQP.BindingKey, // routing key
-		b.Config.AMQP.Exchange,   // exchange
-		false,                    // no-wait
-		nil,                      // arguments
-	)
-}
-
 // Publish sends a task to the AMQP broker
-func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
+func (b *AMQPBroker) Publish(ctx context.Context, task *schema.Signature) error {
 	// Convert task to JSON
 	taskJSON, err := json.Marshal(task)
 	if err != nil {
@@ -180,7 +128,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 	}(b.amqpAdapter, conn)
 
 	// Create a channel
-	channel, err := b.createAmqpChannel(conn)
+	channel, err := b.amqpProvider.CreateAmqpChannel(conn)
 	if err != nil {
 		return err
 	}
@@ -191,11 +139,6 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 		}
 	}(channel)
 
-	// Set the routing key if not specified
-	if task.RoutingKey == "" {
-		task.RoutingKey = b.getRoutingKey()
-	}
-
 	amqpPublishMessage := amqp.Publishing{
 		ContentType:  "application/json",
 		Priority:     task.Priority,
@@ -203,28 +146,27 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *task.Signature) error {
 		DeliveryMode: amqp.Persistent,
 	}
 
-	return b.amqpPublish(ctx, channel, task.RoutingKey, amqpPublishMessage)
+	delayMs := b.getTaskTTL(task)
+	// Set the routing key if not specified
+	if delayMs > 0 {
+		task.RoutingKey = b.getDelayedQueue()
+		amqpPublishMessage.Expiration = fmt.Sprint(delayMs)
+	} else if task.RoutingKey == "" {
+		task.RoutingKey = b.getRoutingKey()
+	}
 
+	return b.amqpProvider.AmqpPublish(ctx, channel, task.RoutingKey, amqpPublishMessage, b.getExchangeName())
 }
 
-func (b *AMQPBroker) amqpPublish(ctx context.Context, channel *amqp.Channel, routingKey string, amqpMsg amqp.Publishing) error {
-	// Publish the message to the exchange
-	err := channel.PublishWithContext(ctx,
-		b.Config.AMQP.Exchange, // exchange
-		routingKey,             // routing key
-		false,                  // mandatory
-		false,                  // immediate
-		amqpMsg,
-	)
-	return err
-}
-
-func (b *AMQPBroker) setChannelQoS(channel *amqp.Channel) error {
-	return channel.Qos(
-		config.GetConfigProvider().GetConfig().AMQP.PrefetchCount,
-		0,     // prefetch size
-		false, // global
-	)
+func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
+	var delayMs int64
+	if task.ETA != nil {
+		now := time.Now().UTC()
+		if task.ETA.After(now) {
+			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
+		}
+	}
+	return delayMs
 }
 
 // setupExchangeQueueBinding sets up the exchange, queue, and binding
@@ -241,7 +183,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 		}
 	}(b.amqpAdapter, amqpConn)
 
-	channel, err := b.createAmqpChannel(amqpConn)
+	channel, err := b.amqpProvider.CreateAmqpChannel(amqpConn)
 	if err != nil {
 		return err
 	}
@@ -253,19 +195,38 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	}(channel)
 
 	// Declare the exchange
-	err = b.declareExchange(channel)
+	err = b.amqpProvider.DeclareExchange(channel, b.getExchangeName(), b.getExchangeType())
 	if err != nil {
 		return err
 	}
 
-	// Declare the queue
-	err = b.declareQueue(channel)
+	declareQueueArgs := amqp.Table{}
+
+	// Declare the task queue
+	err = b.amqpProvider.DeclareQueue(channel, b.getTaskQueue(), declareQueueArgs)
+	if err != nil {
+		return err
+	}
+
+	// Declare the delay queue
+	declareQueueArgs = amqp.Table{
+		// Exchange where to send messages after TTL expiration.
+		"x-dead-letter-exchange": b.getDelayedQueueDLX(),
+		// Routing key which use when resending expired messages.
+		"x-dead-letter-routing-key": b.getRoutingKey(),
+	}
+	err = b.amqpProvider.DeclareQueue(channel, b.getDelayedQueue(), declareQueueArgs)
 	if err != nil {
 		return err
 	}
 
 	// Bind the queue to the exchange
-	err = b.queueExchangeBind(channel)
+	err = b.amqpProvider.QueueExchangeBind(channel, b.getTaskQueue(), b.Config.AMQP.BindingKey, b.Config.AMQP.Exchange)
+	if err != nil {
+		return err
+	}
+
+	err = b.amqpProvider.QueueExchangeBind(channel, b.getDelayedQueue(), b.getDelayedQueue(), b.getDelayedQueueDLX())
 	if err != nil {
 		return err
 	}
@@ -280,8 +241,8 @@ func (b *AMQPBroker) StopConsumer() {
 }
 
 // StartConsumer initializes the AMQP consumer
-func (b *AMQPBroker) StartConsumer(worker *workergroup.WorkerGroup) error {
-	queueName := b.getQueueName()
+func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.WorkerGroupInterface) error {
+	queueName := b.getTaskQueue()
 
 	conn, err := b.getConnection()
 	if err != nil {
@@ -295,7 +256,7 @@ func (b *AMQPBroker) StartConsumer(worker *workergroup.WorkerGroup) error {
 	}(b.amqpAdapter, conn)
 
 	// Create a channel
-	channel, err := b.createAmqpChannel(conn)
+	channel, err := b.amqpProvider.CreateAmqpChannel(conn)
 	if err != nil {
 		return err
 	}
@@ -308,12 +269,12 @@ func (b *AMQPBroker) StartConsumer(worker *workergroup.WorkerGroup) error {
 	}(channel)
 
 	// Channel QOS
-	if err = b.setChannelQoS(channel); err != nil {
+	if err = b.amqpProvider.SetChannelQoS(channel, b.getQueuePrefetchCount()); err != nil {
 		logger.ApplicationLogger.Error("failed to set channel qos, exit", err)
 		return err
 	}
 
-	deliveries, err := b.createConsumer(channel, queueName, worker.Namespace)
+	deliveries, err := b.amqpProvider.CreateConsumer(channel, queueName, workerGroup.GetWorkerGroupName())
 	if err != nil {
 		logger.ApplicationLogger.Error("failed to get deliveries, exit", err)
 		return err
@@ -333,7 +294,7 @@ func (b *AMQPBroker) StartConsumer(worker *workergroup.WorkerGroup) error {
 			return err
 		case d := <-deliveries:
 			b.processingWG.Add(1)
-			b.processDelivery(d, worker)
+			b.processDelivery(ctx, d, workerGroup)
 		case <-b.stopChannel:
 			b.doneStopChannel <- struct{}{}
 			logger.ApplicationLogger.Warning("stop request in consumer, exit")
@@ -345,21 +306,61 @@ func (b *AMQPBroker) StartConsumer(worker *workergroup.WorkerGroup) error {
 }
 
 // consumerDeliveryHandler
-func (b *AMQPBroker) taskProcessor(delivery amqp.Delivery, worker *workergroup.WorkerGroup) error {
-	if len(delivery.Body) == 0 {
-		logger.ApplicationLogger.Error("empty message, return")
-		delivery.Nack(true, false)    // multiple, requeue
-		return errors.ErrEmptyMessage // RabbitMQ down?
-	}
-
+func (b *AMQPBroker) taskProcessor(ctx context.Context, delivery amqp.Delivery, worker workergroup.WorkerGroupInterface) error {
 	var multiple, requeue = false, false
 
-	signature, err := task.BytesToSignature(delivery.Body)
+	if len(delivery.Body) == 0 {
+		logger.ApplicationLogger.Error("empty message, return")
+		delivery.Nack(multiple, requeue) // multiple, requeue
+		return errors.ErrEmptyMessage    // RabbitMQ down?
+	}
+
+	signature, err := schema.BytesToSignature(delivery.Body)
 	if err != nil {
 		logger.ApplicationLogger.Error("decode error in message, return")
 		delivery.Nack(multiple, requeue)
 		return err
 	}
 
-	return worker.Processor(signature)
+	if err := worker.Processor(signature); err != nil {
+		logger.ApplicationLogger.Errorf("Task failed to execute: %s", err.Error())
+
+		if _, ok := err.(*errors.RetryError); !ok {
+			// do nothing
+		} else if signature.RetryCount < 1 {
+			// do nothing
+		} else if err := b.Publish(ctx, signature); err != nil {
+			logger.ApplicationLogger.Error("failed to publish retry message")
+		}
+
+		err = delivery.Nack(false, false)
+		return err
+	}
+
+	err = delivery.Ack(false)
+	return err
+}
+
+func (b *AMQPBroker) getDelayedQueue() string {
+	return config.GetConfigProvider().GetConfig().AMQP.DelayedQueue
+}
+
+func (b *AMQPBroker) getQueuePrefetchCount() int {
+	return config.GetConfigProvider().GetConfig().AMQP.PrefetchCount
+}
+
+func (b *AMQPBroker) getDelayedQueueDLX() string {
+	return config.GetConfigProvider().GetConfig().AMQP.Exchange
+}
+
+func (b *AMQPBroker) getExchangeName() string {
+	return config.GetConfigProvider().GetConfig().AMQP.Exchange
+}
+
+func (b *AMQPBroker) getExchangeType() string {
+	return config.GetConfigProvider().GetConfig().AMQP.ExchangeType
+}
+
+func (b *AMQPBroker) getTaskQueue() string {
+	return config.GetConfigProvider().GetConfig().TaskQueueName
 }

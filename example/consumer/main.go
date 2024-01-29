@@ -2,9 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/schema"
 	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/workerpool"
@@ -14,6 +15,8 @@ import (
 func main() {
 	logrusLog := logrus.StandardLogger()
 	logrusLog.SetFormatter(&logrus.JSONFormatter{})
+	logrusLog.SetReportCaller(true)
+
 	logger.ApplicationLogger = logrusLog
 
 	cnf := config.Config{
@@ -27,6 +30,7 @@ func main() {
 			BindingKey:         "paota_task_binding_key",
 			PrefetchCount:      100,
 			ConnectionPoolSize: 10,
+			DelayedQueue:       "delay_test",
 		},
 	}
 	err := config.GetConfigProvider().SetApplicationConfig(cnf)
@@ -61,7 +65,7 @@ func main() {
 	}
 }
 
-func Print(arg *task.Signature) error {
-	logger.ApplicationLogger.Info("Print Function Completed")
-	return nil
+func Print(arg *schema.Signature) error {
+	logger.ApplicationLogger.Info("Print Function Error")
+	return errors.New("checking retry")
 }

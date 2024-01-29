@@ -5,7 +5,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/logger"
-	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/workerpool"
 	"os"
 	"testing"
@@ -68,6 +68,6 @@ func Consumer() {
 	newWorkerPool.Stop()
 }
 
-func ReturnNil(arg *task.Signature) error {
+func ReturnNil(arg *schema.Signature) error {
 	return nil
 }

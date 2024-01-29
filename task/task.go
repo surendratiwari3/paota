@@ -1,8 +1,7 @@
-package _default
+package task
 
 import (
 	"fmt"
-	"github.com/surendratiwari3/paota/task"
 	"github.com/surendratiwari3/paota/validation"
 	"sync"
 )
@@ -12,7 +11,7 @@ type DefaultTaskRegistrar struct {
 	registeredTasksCount uint
 }
 
-func NewDefaultTaskRegistrar() task.TaskRegistrarInterface {
+func NewDefaultTaskRegistrar() TaskRegistrarInterface {
 	return &DefaultTaskRegistrar{
 		registeredTasks: new(sync.Map),
 	}
