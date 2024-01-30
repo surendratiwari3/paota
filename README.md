@@ -185,7 +185,7 @@ example/consumer/main.go
 
 ### Mocks for this repository are generated using mockery(v2)
 ```bash
-mockery --all --output=mocks
+mockery --inpackage --all
 ```
 
 ## Benchmarks

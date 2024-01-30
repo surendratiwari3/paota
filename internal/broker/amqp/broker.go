@@ -5,23 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/surendratiwari3/paota/adapter"
-	"github.com/surendratiwari3/paota/broker"
-	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/errors"
-	"github.com/surendratiwari3/paota/logger"
-	"github.com/surendratiwari3/paota/provider"
-	"github.com/surendratiwari3/paota/schema"
-	"github.com/surendratiwari3/paota/workergroup"
+	"github.com/surendratiwari3/paota/internal/broker"
+	"github.com/surendratiwari3/paota/internal/config"
+	"github.com/surendratiwari3/paota/internal/logger"
+	"github.com/surendratiwari3/paota/internal/provider"
+	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/internal/schema/errors"
+	"github.com/surendratiwari3/paota/internal/workergroup"
 	"sync"
 	"time"
 )
 
 // AMQPBroker represents an AMQP broker
 type AMQPBroker struct {
-	Config           *config.Config
+	config           *config.Config
 	ackChannel       chan uint64
-	amqpAdapter      adapter.Adapter
 	connectionsMutex sync.Mutex
 	processingWG     sync.WaitGroup
 	amqpErrorChannel <-chan *amqp.Error
@@ -30,8 +28,13 @@ type AMQPBroker struct {
 	amqpProvider     provider.AmqpProviderInterface
 }
 
+// globalAmqpProvider defined just for unit test cases
+var (
+	globalAmqpProvider provider.AmqpProviderInterface
+)
+
 func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
-	amqpConn, err := b.amqpAdapter.GetConnectionFromPool()
+	amqpConn, err := b.amqpProvider.GetConnectionFromPool()
 	if err != nil {
 		return nil, err
 	}
@@ -43,11 +46,11 @@ func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
 
 // getRoutingKey gets the routing key from the signature
 func (b *AMQPBroker) getRoutingKey() string {
-	if b.Config.AMQP.BindingKey == "" {
+	if b.config.AMQP.BindingKey == "" {
 		return b.getTaskQueue()
 	}
 	if b.isDirectExchange() {
-		return b.Config.AMQP.BindingKey
+		return b.config.AMQP.BindingKey
 	}
 
 	return b.getTaskQueue()
@@ -55,7 +58,7 @@ func (b *AMQPBroker) getRoutingKey() string {
 
 // isDirectExchange checks if the exchange type is direct
 func (b *AMQPBroker) isDirectExchange() bool {
-	return b.Config.AMQP != nil && b.Config.AMQP.ExchangeType == "direct"
+	return b.config.AMQP != nil && b.config.AMQP.ExchangeType == "direct"
 }
 
 // NewAMQPBroker creates a new instance of the AMQP broker
@@ -67,18 +70,19 @@ func NewAMQPBroker() (broker.Broker, error) {
 	stopChannel := make(chan struct{})
 	doneStopChannel := make(chan struct{})
 	amqpBroker := &AMQPBroker{
-		Config:           cfg,
+		config:           cfg,
 		connectionsMutex: sync.Mutex{},
 		amqpErrorChannel: amqpErrorChannel,
 		stopChannel:      stopChannel,
 		doneStopChannel:  doneStopChannel,
+		amqpProvider:     globalAmqpProvider,
 	}
 
-	amqpBroker.amqpAdapter = adapter.NewAMQPAdapter()
+	if amqpBroker.amqpProvider == nil {
+		amqpBroker.amqpProvider = provider.NewAmqpProvider(cfg.AMQP)
+	}
 
-	amqpBroker.amqpProvider = provider.NewAmqpProvider()
-
-	err := amqpBroker.amqpAdapter.CreateConnectionPool()
+	err := amqpBroker.amqpProvider.CreateConnectionPool()
 	if err != nil {
 		logger.ApplicationLogger.Error("failed to created connection pool, return", err)
 		return nil, err
@@ -120,12 +124,12 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *schema.Signature) error 
 	if err != nil {
 		return err
 	}
-	defer func(amqpAdapter adapter.Adapter, i interface{}) {
-		err := b.amqpAdapter.ReleaseConnectionToPool(i)
+	defer func(amqpProvider provider.AmqpProviderInterface, i interface{}) {
+		err := b.amqpProvider.ReleaseConnectionToPool(i)
 		if err != nil {
 			//TODO:error handling
 		}
-	}(b.amqpAdapter, conn)
+	}(b.amqpProvider, conn)
 
 	// Create a channel
 	channel, err := b.amqpProvider.CreateAmqpChannel(conn)
@@ -133,7 +137,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *schema.Signature) error 
 		return err
 	}
 	defer func(channel *amqp.Channel) {
-		err := channel.Close()
+		err := b.amqpProvider.CloseAmqpChannel(channel)
 		if err != nil {
 			//TODO:error handling
 		}
@@ -175,20 +179,19 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-	defer func(amqpAdapter adapter.Adapter, i interface{}) {
-		err := amqpAdapter.ReleaseConnectionToPool(i)
+	defer func(amqpProvider provider.AmqpProviderInterface, i interface{}) {
+		err := b.amqpProvider.ReleaseConnectionToPool(i)
 		if err != nil {
-			logger.ApplicationLogger.Error("release connection to pool failed", err)
 			//TODO:error handling
 		}
-	}(b.amqpAdapter, amqpConn)
+	}(b.amqpProvider, amqpConn)
 
 	channel, err := b.amqpProvider.CreateAmqpChannel(amqpConn)
 	if err != nil {
 		return err
 	}
 	defer func(channel *amqp.Channel) {
-		err := channel.Close()
+		err := b.amqpProvider.CloseAmqpChannel(channel)
 		if err != nil {
 			//TODO: error handling
 		}
@@ -221,7 +224,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	}
 
 	// Bind the queue to the exchange
-	err = b.amqpProvider.QueueExchangeBind(channel, b.getTaskQueue(), b.Config.AMQP.BindingKey, b.Config.AMQP.Exchange)
+	err = b.amqpProvider.QueueExchangeBind(channel, b.getTaskQueue(), b.config.AMQP.BindingKey, b.config.AMQP.Exchange)
 	if err != nil {
 		return err
 	}
@@ -248,12 +251,12 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 	if err != nil {
 		return err
 	}
-	defer func(amqpAdapter adapter.Adapter, i interface{}) {
-		err := amqpAdapter.ReleaseConnectionToPool(i)
+	defer func(amqpProvider provider.AmqpProviderInterface, i interface{}) {
+		err := b.amqpProvider.ReleaseConnectionToPool(i)
 		if err != nil {
 			//TODO:error handling
 		}
-	}(b.amqpAdapter, conn)
+	}(b.amqpProvider, conn)
 
 	// Create a channel
 	channel, err := b.amqpProvider.CreateAmqpChannel(conn)
@@ -261,7 +264,7 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 		return err
 	}
 	defer func(channel *amqp.Channel) {
-		err := channel.Close()
+		err := b.amqpProvider.CloseAmqpChannel(channel)
 		if err != nil {
 			logger.ApplicationLogger.Error("failed to start consumer, exit", err)
 			//TODO:error handling
@@ -342,25 +345,25 @@ func (b *AMQPBroker) taskProcessor(ctx context.Context, delivery amqp.Delivery, 
 }
 
 func (b *AMQPBroker) getDelayedQueue() string {
-	return config.GetConfigProvider().GetConfig().AMQP.DelayedQueue
+	return b.config.AMQP.DelayedQueue
 }
 
 func (b *AMQPBroker) getQueuePrefetchCount() int {
-	return config.GetConfigProvider().GetConfig().AMQP.PrefetchCount
+	return b.config.AMQP.PrefetchCount
 }
 
 func (b *AMQPBroker) getDelayedQueueDLX() string {
-	return config.GetConfigProvider().GetConfig().AMQP.Exchange
+	return b.config.AMQP.Exchange
 }
 
 func (b *AMQPBroker) getExchangeName() string {
-	return config.GetConfigProvider().GetConfig().AMQP.Exchange
+	return b.config.AMQP.Exchange
 }
 
 func (b *AMQPBroker) getExchangeType() string {
-	return config.GetConfigProvider().GetConfig().AMQP.ExchangeType
+	return b.config.AMQP.ExchangeType
 }
 
 func (b *AMQPBroker) getTaskQueue() string {
-	return config.GetConfigProvider().GetConfig().TaskQueueName
+	return b.config.TaskQueueName
 }

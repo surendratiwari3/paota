@@ -3,9 +3,9 @@ package workergroup
 import (
 	"errors"
 	"github.com/stretchr/testify/assert"
-	appError "github.com/surendratiwari3/paota/errors"
-	"github.com/surendratiwari3/paota/schema"
-	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/internal/schema"
+	appError "github.com/surendratiwari3/paota/internal/schema/errors"
+	"github.com/surendratiwari3/paota/internal/task"
 	"testing"
 )
 

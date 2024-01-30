@@ -5,15 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/surendratiwari3/paota/broker"
-	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/factory"
-	"github.com/surendratiwari3/paota/logger"
-	"github.com/surendratiwari3/paota/schema"
-	"github.com/surendratiwari3/paota/store"
-	"github.com/surendratiwari3/paota/task"
+	"github.com/surendratiwari3/paota/internal/broker"
+	"github.com/surendratiwari3/paota/internal/config"
+	"github.com/surendratiwari3/paota/internal/factory"
+	"github.com/surendratiwari3/paota/internal/logger"
+	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/internal/store"
+	"github.com/surendratiwari3/paota/internal/task"
 
-	"github.com/surendratiwari3/paota/workergroup"
+	"github.com/surendratiwari3/paota/internal/workergroup"
 	"os"
 	"os/signal"
 	"reflect"
@@ -95,6 +95,15 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 	workerPool.workerGroup = workergroup.NewWorkerGroup(concurrency, taskRegistrar, nameSpace)
 
 	return workerPool, nil
+}
+
+func NewWorkerPoolWithConfig(ctx interface{}, concurrency uint, nameSpace string, conf config.Config) (Pool, error) {
+	err := config.GetConfigProvider().SetApplicationConfig(conf)
+	if err != nil {
+		logger.ApplicationLogger.Error("config error", err)
+		return nil, err
+	}
+	return NewWorkerPool(ctx, concurrency, nameSpace)
 }
 
 // NewWorkerPoolWithOptions : TODO future with options

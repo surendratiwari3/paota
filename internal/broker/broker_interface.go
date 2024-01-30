@@ -2,8 +2,8 @@ package broker
 
 import (
 	"context"
-	"github.com/surendratiwari3/paota/schema"
-	"github.com/surendratiwari3/paota/workergroup"
+	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/internal/workergroup"
 )
 
 // Broker - a common interface for all brokers

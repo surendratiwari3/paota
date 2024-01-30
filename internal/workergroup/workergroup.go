@@ -2,11 +2,11 @@ package workergroup
 
 import (
 	"errors"
-	appError "github.com/surendratiwari3/paota/errors"
-	"github.com/surendratiwari3/paota/logger"
-	"github.com/surendratiwari3/paota/schema"
-	"github.com/surendratiwari3/paota/task"
-	"github.com/surendratiwari3/paota/utils"
+	"github.com/surendratiwari3/paota/internal/logger"
+	"github.com/surendratiwari3/paota/internal/schema"
+	appError "github.com/surendratiwari3/paota/internal/schema/errors"
+	"github.com/surendratiwari3/paota/internal/task"
+	"github.com/surendratiwari3/paota/internal/utils"
 	"time"
 )
 

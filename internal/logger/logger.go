@@ -7,6 +7,8 @@ import "log"
 // DefaultLogger is an implementation of the Logger interface using the standard log package.
 type DefaultLogger struct{}
 
+var ApplicationLogger Logger = &DefaultLogger{}
+
 func (l *DefaultLogger) Debug(args ...interface{}) {
 	//TODO implement me
 	panic("implement me")

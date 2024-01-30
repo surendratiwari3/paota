@@ -2,9 +2,9 @@ package workerpool
 
 import (
 	"context"
-	"github.com/surendratiwari3/paota/broker"
-	"github.com/surendratiwari3/paota/schema"
-	"github.com/surendratiwari3/paota/store"
+	"github.com/surendratiwari3/paota/internal/broker"
+	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/internal/store"
 )
 
 type Pool interface {

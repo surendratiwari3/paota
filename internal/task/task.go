@@ -2,7 +2,7 @@ package task
 
 import (
 	"fmt"
-	"github.com/surendratiwari3/paota/validation"
+	"github.com/surendratiwari3/paota/internal/validation"
 	"sync"
 )
 

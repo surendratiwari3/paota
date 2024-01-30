@@ -1,7 +1,7 @@
 package validation
 
 import (
-	"github.com/surendratiwari3/paota/errors"
+	"github.com/surendratiwari3/paota/internal/schema/errors"
 	"reflect"
 )
 

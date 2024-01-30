@@ -1,29 +1,30 @@
-package adapter
+package provider
 
 import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
-	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/errors"
+	"github.com/surendratiwari3/paota/internal/config"
+	"github.com/surendratiwari3/paota/internal/schema/errors"
 	"testing"
 )
 
 func TestNewAMQPAdapterWithNilConfig(t *testing.T) {
-	// Create a mock ConfigProvider with a nil config
-	mockConfigProvider := new(config.MockConfigProvider)
-	mockConfigProvider.On("GetConfig").Return(nil)
 
-	// Set the mock ConfigProvider for testing
-	config.SetConfigProvider(mockConfigProvider)
+	amqpConfig := &config.Config{
+		Broker: "amqp",
+		AMQP: &config.AMQPConfig{
+			Url:                "amqp://guest:guest@localhost:5672/",
+			HeartBeatInterval:  10,
+			ConnectionPoolSize: 3,
+		},
+	}
 
 	// Create a new AMQPAdapter
-	adapter := NewAMQPAdapter()
+	adapter := NewAmqpProvider(amqpConfig.AMQP)
 
 	// Assert that the adapter is nil since the config is nil
-	assert.Nil(t, adapter)
+	assert.NotNil(t, adapter)
 
-	// Verify that the GetConfig method was called
-	mockConfigProvider.AssertExpectations(t)
 }
 
 func TestNewAMQPAdapterWithValidConfig(t *testing.T) {
@@ -35,14 +36,22 @@ func TestNewAMQPAdapterWithValidConfig(t *testing.T) {
 	// Set the mock ConfigProvider for testing
 	config.SetConfigProvider(mockConfigProvider)
 
+	amqpConfig := &config.Config{
+		Broker: "amqp",
+		AMQP: &config.AMQPConfig{
+			Url:                "amqp://guest:guest@localhost:5672/",
+			HeartBeatInterval:  10,
+			ConnectionPoolSize: 3,
+		},
+	}
 	// Create a new AMQPAdapter
-	adapter := NewAMQPAdapter()
+	adapter := NewAmqpProvider(amqpConfig.AMQP)
 
 	// Assert that the adapter is not nil
 	assert.NotNil(t, adapter)
 
 	// Verify that the GetConfig method was called
-	mockConfigProvider.AssertExpectations(t)
+	//mockConfigProvider.AssertExpectations(t)
 }
 
 // TestAMQPAdapter tests the functionality of the AMQPAdapter
@@ -57,7 +66,7 @@ func TestCreateConnection_ConnectionRefused(t *testing.T) {
 		},
 	}
 
-	amqpAdapter := AMQPAdapter{amqpConfig: amqpConfig.AMQP}
+	amqpAdapter := amqpProvider{amqpConf: amqpConfig.AMQP}
 
 	t.Run("TestCreateConnection", func(t *testing.T) {
 		conn, err := amqpAdapter.CreateConnection()
@@ -78,7 +87,7 @@ func TestCreateConnection_NilAMQPConfig(t *testing.T) {
 
 	config.SetConfigProvider(mockConfigProvider)
 
-	adapter := AMQPAdapter{}
+	adapter := amqpProvider{}
 
 	// Call the CreateConnection method
 	conn, err := adapter.CreateConnection()
@@ -99,7 +108,11 @@ func TestCreateConnectionPool_ConnectionError(t *testing.T) {
 		},
 	}, nil)
 	config.SetConfigProvider(mockConfigProvider)
-	adapter := NewAMQPAdapter()
+	adapter := NewAmqpProvider(&config.AMQPConfig{
+		Url:                "amqp://localhost:5672",
+		HeartBeatInterval:  30,
+		ConnectionPoolSize: 2,
+	})
 	err := adapter.CreateConnectionPool()
 	// Assert that there is no error
 	assert.Error(t, err, "dial tcp [::1]:5672: connect: connection refused")
@@ -116,7 +129,11 @@ func TestCreateConnectionPool_InvalidConnectionPoolSize(t *testing.T) {
 		},
 	}, nil)
 	config.SetConfigProvider(mockConfigProvider)
-	adapter := NewAMQPAdapter()
+	adapter := NewAmqpProvider(&config.AMQPConfig{
+		Url:                "amqp://localhost:5672",
+		HeartBeatInterval:  30,
+		ConnectionPoolSize: 2,
+	})
 	err := adapter.CreateConnectionPool()
 	// Assert that there is no error
 	assert.Error(t, err, errors.ErrInvalidConfig.Error())
@@ -124,7 +141,7 @@ func TestCreateConnectionPool_InvalidConnectionPoolSize(t *testing.T) {
 
 func TestReleaseConnectionToPool(t *testing.T) {
 	// Set up the AMQPAdapter
-	adapter := &AMQPAdapter{
+	adapter := &amqpProvider{
 		ConnectionPool: []*amqp.Connection{},
 	}
 
@@ -143,7 +160,7 @@ func TestReleaseConnectionToPool(t *testing.T) {
 
 func TestGetConnectionFromPool(t *testing.T) {
 	// Case 1: Non-empty connection pool
-	adapter := &AMQPAdapter{
+	adapter := &amqpProvider{
 		ConnectionPool: []*amqp.Connection{new(amqp.Connection)},
 	}
 
@@ -158,7 +175,7 @@ func TestGetConnectionFromPool(t *testing.T) {
 	assert.Equal(t, 0, len(adapter.ConnectionPool))
 
 	// Case 2: Empty connection pool
-	emptyAdapter := &AMQPAdapter{
+	emptyAdapter := &amqpProvider{
 		ConnectionPool: nil,
 	}
 

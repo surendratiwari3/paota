@@ -3,9 +3,9 @@ package consumer
 import (
 	"context"
 	"github.com/sirupsen/logrus"
-	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/logger"
-	"github.com/surendratiwari3/paota/schema"
+	"github.com/surendratiwari3/paota/internal/config"
+	"github.com/surendratiwari3/paota/internal/logger"
+	"github.com/surendratiwari3/paota/internal/schema"
 	"github.com/surendratiwari3/paota/workerpool"
 	"os"
 	"testing"
