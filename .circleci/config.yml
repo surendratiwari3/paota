@@ -25,6 +25,13 @@ jobs:
             mv coverage.html /tmp/artifacts
       - store_artifacts:
           path: /tmp/artifacts
+          
+  lint:
+    docker:
+      - image: golangci/golangci-lint:v1.37-alpine
+    steps:
+      - checkout
+      - run: golangci-lint run
 
 version: 2.1
 workflows:
@@ -32,3 +39,4 @@ workflows:
   build:
     jobs:
       - build
+      - lint
