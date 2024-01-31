@@ -210,7 +210,7 @@ benchstat 10_benchmark_test.txt
 ```
 
 ### Conclusion
-We have acheived benchmarking of 300 request per second for publisher and consumer (concurrency=10 and PrefetchCount=100). If you want to achieve more throughput concurrency can be increased to any extent. 
+We have acheived benchmarking for 50 publisher publishing request and 1 consumer worker consuming the request at speed of 1700 request per second (concurrency=10 and PrefetchCount=100). If you want to achieve more throughput concurrency can be increased to any extent. 
 
 Thank you for flying Paota!
 
