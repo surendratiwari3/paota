@@ -2,6 +2,7 @@ package workergroup
 
 import (
 	"errors"
+	"github.com/surendratiwari3/paota/internal/config"
 	"github.com/surendratiwari3/paota/internal/logger"
 	"github.com/surendratiwari3/paota/internal/schema"
 	appError "github.com/surendratiwari3/paota/internal/schema/errors"
@@ -11,41 +12,76 @@ import (
 )
 
 type WorkerGroupInterface interface {
-	Processor(signature *schema.Signature) error
 	GetWorkerGroupName() string
-	GetWorker()
-	AddWorker()
+	AssignJob(interface{})
+	Stop()
+	Start()
+}
+
+// Worker represents a worker that processes tasks.
+type worker struct {
+	ID         uint
+	JobChannel chan interface{}
 }
 
 type workerGroup struct {
-	Namespace      string
-	Concurrency    uint
-	WorkersChannel chan struct{}
-	TaskRegistrar  task.TaskRegistrarInterface
+	Namespace     string
+	Concurrency   uint
+	Workers       []*worker
+	TaskRegistrar task.TaskRegistrarInterface
 	// Add other parameters as needed
 }
 
-func (w *workerGroup) Processor(signature *schema.Signature) error {
-	registeredTaskFunc, err := w.TaskRegistrar.GetRegisteredTask(signature.Name)
-	if err != nil {
-		logger.ApplicationLogger.Error("invalid task function")
-		return appError.ErrTaskMustBeFunc
-	} else if registeredTaskFunc == nil {
-		logger.ApplicationLogger.Error("task is not registered")
-		return appError.ErrTaskNotRegistered
+// NewWorkerGroup - create a workergroup
+func NewWorkerGroup(concurrency uint, registrarInterface task.TaskRegistrarInterface, namespace string) WorkerGroupInterface {
+	wrkGrp := &workerGroup{
+		Concurrency:   concurrency,
+		TaskRegistrar: registrarInterface,
+		Namespace:     namespace,
+	}
+	for i := uint(0); i < concurrency; i++ {
+		worker := &worker{
+			ID:         i,
+			JobChannel: make(chan interface{}),
+		}
+		wrkGrp.Workers = append(wrkGrp.Workers, worker)
 	}
 
-	if fn, ok := registeredTaskFunc.(func(*schema.Signature) error); ok {
-		if err := fn(signature); err != nil {
-			logger.ApplicationLogger.Error("task failed to execute")
-			return w.parseRetry(signature, err)
+	return wrkGrp
+}
+
+func (wg *workerGroup) Start() {
+	for i := uint(0); i < wg.Concurrency; i++ {
+		go wg.work(wg.Workers[i])
+	}
+}
+
+// Stop all workers by closing their job channels.
+func (wg *workerGroup) Stop() {
+	for _, worker := range wg.Workers {
+		close(worker.JobChannel)
+	}
+}
+
+func (wg *workerGroup) work(wrk *worker) {
+	for job := range wrk.JobChannel {
+		err := wg.TaskRegistrar.Processor(job)
+		if err != nil {
+			logger.ApplicationLogger.Error("error while executing task")
 		}
 	}
-	return nil
+}
+
+// AssignJob assigns a job to a worker in a round-robin fashion.
+func (wg *workerGroup) AssignJob(job interface{}) {
+	// Use round-robin scheduling to assign jobs to workers
+	for _, worker := range wg.Workers {
+		worker.JobChannel <- job
+	}
 }
 
 // getRetry
-func (w *workerGroup) parseRetry(signature *schema.Signature, err error) error {
+func (wg *workerGroup) parseRetry(signature *schema.Signature, err error) error {
 	if signature.RetryCount < 1 {
 		return err
 	}
@@ -53,7 +89,7 @@ func (w *workerGroup) parseRetry(signature *schema.Signature, err error) error {
 	if signature.RetriesDone > signature.RetryCount {
 		return err
 	}
-	retryInterval := w.getRetryInterval(signature.RetriesDone)
+	retryInterval := wg.getRetryInterval(signature.RetriesDone)
 	eta := time.Now().UTC().Add(retryInterval)
 	signature.ETA = &eta
 	retryError := appError.RetryError{
@@ -65,32 +101,24 @@ func (w *workerGroup) parseRetry(signature *schema.Signature, err error) error {
 }
 
 // getRetryInterval
-func (w *workerGroup) getRetryInterval(retryCount int) time.Duration {
+func (wg *workerGroup) getRetryInterval(retryCount int) time.Duration {
 	return time.Duration(utils.Fibonacci(retryCount)) * time.Second
 }
 
-func (w *workerGroup) GetWorkerGroupName() string {
-	return w.Namespace
+func (wg *workerGroup) GetWorkerGroupName() string {
+	return wg.Namespace
 }
 
-func (w *workerGroup) GetWorker() {
-	<-w.WorkersChannel
-}
-
-func (w *workerGroup) AddWorker() {
-	w.WorkersChannel <- struct{}{}
-}
-
-// NewWorkerGroup - create a workergroup
-func NewWorkerGroup(concurrency uint, registrarInterface task.TaskRegistrarInterface, namespace string) WorkerGroupInterface {
-	wrkGrp := &workerGroup{
-		Concurrency:   concurrency,
-		TaskRegistrar: registrarInterface,
-		Namespace:     namespace,
+func (wg *workerGroup) getTaskTTL(task *schema.Signature) int64 {
+	var delayMs int64
+	if task.ETA != nil {
+		now := time.Now().UTC()
+		if task.ETA.After(now) {
+			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
+		}
 	}
-	wrkGrp.WorkersChannel = make(chan struct{}, concurrency)
-	for i := uint(0); i < concurrency; i++ {
-		wrkGrp.AddWorker()
+	if delayMs > 0 {
+		task.RoutingKey = config.GetConfigProvider().GetConfig().AMQP.DelayedQueue
 	}
-	return wrkGrp
+	return delayMs
 }

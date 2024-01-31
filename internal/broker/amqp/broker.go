@@ -13,7 +13,6 @@ import (
 	"github.com/surendratiwari3/paota/internal/schema/errors"
 	"github.com/surendratiwari3/paota/internal/workergroup"
 	"sync"
-	"time"
 )
 
 // AMQPBroker represents an AMQP broker
@@ -97,27 +96,20 @@ func NewAMQPBroker() (broker.Broker, error) {
 	return amqpBroker, nil
 }
 
-func (b *AMQPBroker) processDelivery(ctx context.Context, d amqp.Delivery, workerGroup workergroup.WorkerGroupInterface) {
-	// get worker from pool (blocks until one is available)
-	workerGroup.GetWorker()
-	// Consume the task inside a goroutine so multiple tasks
-	// can be processed concurrently
-	go func() {
-		if err := b.taskProcessor(ctx, d, workerGroup); err != nil {
-			logger.ApplicationLogger.Error("error in task processor, exit", err)
-		}
-		b.processingWG.Done()
-		workerGroup.AddWorker()
-	}()
+func (b *AMQPBroker) processDelivery(ctx context.Context, amqpMsg amqp.Delivery, workerGroup workergroup.WorkerGroupInterface) error {
+	if len(amqpMsg.Body) == 0 {
+		logger.ApplicationLogger.Error("empty message, return")
+		amqpMsg.Nack(false, false)    // multiple, requeue
+		return errors.ErrEmptyMessage // RabbitMQ down?
+	}
+
+	workerGroup.AssignJob(amqpMsg)
+	b.processingWG.Done()
+	return nil
 }
 
 // Publish sends a task to the AMQP broker
-func (b *AMQPBroker) Publish(ctx context.Context, task *schema.Signature) error {
-	// Convert task to JSON
-	taskJSON, err := json.Marshal(task)
-	if err != nil {
-		return fmt.Errorf("JSON marshal error: %s", err)
-	}
+func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) error {
 
 	// Get a connection from the pool
 	conn, err := b.getConnection()
@@ -143,34 +135,28 @@ func (b *AMQPBroker) Publish(ctx context.Context, task *schema.Signature) error 
 		}
 	}(channel)
 
+	taskJSON, err := json.Marshal(signature)
+	if err != nil {
+		return fmt.Errorf("JSON marshal error: %s", err)
+	}
+
 	amqpPublishMessage := amqp.Publishing{
 		ContentType:  "application/json",
-		Priority:     task.Priority,
+		Priority:     signature.Priority,
 		Body:         taskJSON,
 		DeliveryMode: amqp.Persistent,
 	}
 
-	delayMs := b.getTaskTTL(task)
+	delayMs := signature.WaitTime
 	// Set the routing key if not specified
 	if delayMs > 0 {
-		task.RoutingKey = b.getDelayedQueue()
+		signature.RoutingKey = b.getDelayedQueue()
 		amqpPublishMessage.Expiration = fmt.Sprint(delayMs)
-	} else if task.RoutingKey == "" {
-		task.RoutingKey = b.getRoutingKey()
+	} else if signature.RoutingKey == "" {
+		signature.RoutingKey = b.getRoutingKey()
 	}
 
-	return b.amqpProvider.AmqpPublish(ctx, channel, task.RoutingKey, amqpPublishMessage, b.getExchangeName())
-}
-
-func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
-	var delayMs int64
-	if task.ETA != nil {
-		now := time.Now().UTC()
-		if task.ETA.After(now) {
-			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
-		}
-	}
-	return delayMs
+	return b.amqpProvider.AmqpPublish(ctx, channel, signature.RoutingKey, amqpPublishMessage, b.getExchangeName())
 }
 
 // setupExchangeQueueBinding sets up the exchange, queue, and binding
@@ -306,42 +292,6 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 	}
 	b.processingWG.Wait()
 	return nil
-}
-
-// consumerDeliveryHandler
-func (b *AMQPBroker) taskProcessor(ctx context.Context, delivery amqp.Delivery, worker workergroup.WorkerGroupInterface) error {
-	var multiple, requeue = false, false
-
-	if len(delivery.Body) == 0 {
-		logger.ApplicationLogger.Error("empty message, return")
-		delivery.Nack(multiple, requeue) // multiple, requeue
-		return errors.ErrEmptyMessage    // RabbitMQ down?
-	}
-
-	signature, err := schema.BytesToSignature(delivery.Body)
-	if err != nil {
-		logger.ApplicationLogger.Error("decode error in message, return")
-		delivery.Nack(multiple, requeue)
-		return err
-	}
-
-	if err := worker.Processor(signature); err != nil {
-		logger.ApplicationLogger.Errorf("Task failed to execute: %s", err.Error())
-
-		if _, ok := err.(*errors.RetryError); !ok {
-			// do nothing
-		} else if signature.RetryCount < 1 {
-			// do nothing
-		} else if err := b.Publish(ctx, signature); err != nil {
-			logger.ApplicationLogger.Error("failed to publish retry message")
-		}
-
-		err = delivery.Nack(false, false)
-		return err
-	}
-
-	err = delivery.Ack(false)
-	return err
 }
 
 func (b *AMQPBroker) getDelayedQueue() string {

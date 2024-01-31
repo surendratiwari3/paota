@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/surendratiwari3/paota/broker"
+	"github.com/surendratiwari3/paota/internal/broker"
 	"github.com/surendratiwari3/paota/internal/config"
 	"github.com/surendratiwari3/paota/internal/factory"
 	"github.com/surendratiwari3/paota/internal/schema"

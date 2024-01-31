@@ -1,4 +1,4 @@
-package task
+package memory
 
 import (
 	"github.com/stretchr/testify/assert"
