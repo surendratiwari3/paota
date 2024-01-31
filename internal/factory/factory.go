@@ -7,12 +7,13 @@ import (
 	"github.com/surendratiwari3/paota/internal/logger"
 	appErrors "github.com/surendratiwari3/paota/internal/schema/errors"
 	"github.com/surendratiwari3/paota/internal/task"
+	"github.com/surendratiwari3/paota/internal/task/memory"
 )
 
 type IFactory interface {
 	CreateBroker() (broker.Broker, error)
 	CreateStore() error
-	CreateTaskRegistrar() task.TaskRegistrarInterface
+	CreateTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface
 }
 
 type Factory struct{}
@@ -45,6 +46,6 @@ func (bf *Factory) CreateStore() error {
 	}
 }
 
-func (bf *Factory) CreateTaskRegistrar() task.TaskRegistrarInterface {
-	return task.NewDefaultTaskRegistrar()
+func (bf *Factory) CreateTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface {
+	return memory.NewDefaultTaskRegistrar(brk)
 }

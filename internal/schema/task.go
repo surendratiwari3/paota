@@ -18,13 +18,6 @@ var (
 	ctxType = reflect.TypeOf((*context.Context)(nil)).Elem()
 )
 
-// Arg represents a single argument passed to invocation fo a task
-type Arg struct {
-	Name  string      `bson:"name"`
-	Type  string      `bson:"type"`
-	Value interface{} `bson:"value"`
-}
-
 // Job wraps a signature and methods used to reflect task arguments and
 // return values after invoking the task
 type Job struct {
@@ -32,6 +25,13 @@ type Job struct {
 	UseContext bool
 	Context    context.Context
 	Args       []reflect.Value
+}
+
+// Arg represents a single argument passed to invocation fo a task
+type Arg struct {
+	Name  string      `bson:"name"`
+	Type  string      `bson:"type"`
+	Value interface{} `bson:"value"`
 }
 
 // Signature represents a single task invocation
@@ -43,6 +43,7 @@ type Signature struct {
 	Priority                    uint8
 	RetryCount                  int
 	RetryTimeout                int
+	WaitTime                    int
 	RetriesDone                 int
 	IgnoreWhenTaskNotRegistered bool
 	ETA                         *time.Time

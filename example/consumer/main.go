@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/internal/config"
 	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/workerpool"
+
 	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/internal/logger"
-	"github.com/surendratiwari3/paota/workerpool"
 	"os"
 )
 
@@ -65,7 +65,13 @@ func main() {
 	}
 }
 
+/*
 func Print(arg *schema.Signature) error {
 	logger.ApplicationLogger.Info("Print Function Error")
 	return errors.New("checking retry")
+}*/
+
+func Print(arg *schema.Signature) error {
+	logger.ApplicationLogger.Info("success")
+	return nil
 }

@@ -85,7 +85,7 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 		return nil, err
 	}
 
-	taskRegistrar := workerPool.factory.CreateTaskRegistrar()
+	taskRegistrar := workerPool.factory.CreateTaskRegistrar(factoryBroker)
 	if taskRegistrar == nil {
 		logger.ApplicationLogger.Error("task registrar creation failed")
 		return nil, errors.New("failed to start the worker pool")
@@ -133,16 +133,9 @@ func (wp *WorkerPool) SetBackend(backend store.Backend) {
 
 // SendTaskWithContext will inject the trace context in the signature headers before publishing it
 func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *schema.Signature) (*schema.State, error) {
-	// Auto generate a UUID if not set already
-	if signature.UUID == "" {
-		taskID := uuid.New().String()
-		signature.UUID = fmt.Sprintf("task_%v", taskID)
-	}
-
-	if err := wp.broker.Publish(ctx, signature); err != nil {
+	if err := wp.taskRegistrar.SendTaskWithContext(ctx, signature); err != nil {
 		return nil, fmt.Errorf("Publish message error: %s", err)
 	}
-
 	return schema.NewPendingTaskState(signature), nil
 }
 
@@ -162,6 +155,8 @@ func (wp *WorkerPool) Start() error {
 
 	wp.started = true
 	logger.ApplicationLogger.Info("worker pool called")
+
+	wp.workerGroup.Start()
 
 	var signalWG sync.WaitGroup
 	go func() {
@@ -205,5 +200,7 @@ func (wp *WorkerPool) Stop() {
 		return
 	}
 	wp.started = false
+	wp.workerGroup.Stop()
 	wp.broker.StopConsumer()
+
 }
