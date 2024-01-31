@@ -13,6 +13,7 @@ import (
 	"github.com/surendratiwari3/paota/internal/schema/errors"
 	"github.com/surendratiwari3/paota/internal/workergroup"
 	"sync"
+	"time"
 )
 
 // AMQPBroker represents an AMQP broker
@@ -147,10 +148,9 @@ func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) e
 		DeliveryMode: amqp.Persistent,
 	}
 
-	delayMs := signature.WaitTime
+	delayMs := b.getTaskTTL(signature)
 	// Set the routing key if not specified
 	if delayMs > 0 {
-		signature.RoutingKey = b.getDelayedQueue()
 		amqpPublishMessage.Expiration = fmt.Sprint(delayMs)
 	} else if signature.RoutingKey == "" {
 		signature.RoutingKey = b.getRoutingKey()
@@ -316,4 +316,15 @@ func (b *AMQPBroker) getExchangeType() string {
 
 func (b *AMQPBroker) getTaskQueue() string {
 	return b.config.TaskQueueName
+}
+
+func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
+	var delayMs int64
+	if task.ETA != nil {
+		now := time.Now().UTC()
+		if task.ETA.After(now) {
+			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
+		}
+	}
+	return delayMs
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/surendratiwari3/paota/internal/config"
 	"github.com/surendratiwari3/paota/internal/schema"
 	"github.com/surendratiwari3/paota/workerpool"
+	"sync"
 
 	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/internal/logger"
@@ -90,8 +91,17 @@ func main() {
 		IgnoreWhenTaskNotRegistered: true,
 	}
 
-	newWorkerPool.SendTaskWithContext(context.Background(), printJob)
+	waitGrp := sync.WaitGroup{}
+	waitGrp.Add(1)
+	for i := 0; i < 50; i++ {
+		go func() {
+			for i := 0; i < 100000; i++ {
+				newWorkerPool.SendTaskWithContext(context.Background(), printJob)
+			}
+		}()
+	}
 
+	waitGrp.Wait()
 }
 
 func Print(arg *schema.Signature) error {

@@ -1,13 +1,17 @@
 package memory
 
 import (
+	"errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/surendratiwari3/paota/internal/broker"
+	"github.com/surendratiwari3/paota/internal/schema"
 	"testing"
 )
 
 func TestTaskRegistrar_RegisterTasks(t *testing.T) {
-
-	taskRegistrar := NewDefaultTaskRegistrar()
+	mockBroker := broker.NewMockBroker(t)
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
 	// Create a mock task function
 	mockTaskFunc := func() error { return nil }
 	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
@@ -28,8 +32,9 @@ func TestTaskRegistrar_RegisterTasks(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-func TestWorkerPool_IsTaskRegistered(t *testing.T) {
-	taskRegistrar := NewDefaultTaskRegistrar()
+func TestTaskRegistrar_IsTaskRegistered(t *testing.T) {
+	mockBroker := broker.NewMockBroker(t)
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
 	// Create a mock task function
 	mockTaskFunc := func() error { return nil }
 	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
@@ -41,8 +46,9 @@ func TestWorkerPool_IsTaskRegistered(t *testing.T) {
 	assert.False(t, taskRegistrar.IsTaskRegistered("taskName1"))
 }
 
-func TestWorkerPool_GetRegisteredTask(t *testing.T) {
-	taskRegistrar := NewDefaultTaskRegistrar()
+func TestTaskRegistrar_GetRegisteredTask(t *testing.T) {
+	mockBroker := broker.NewMockBroker(t)
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
 
 	// Create a mock task function
 	mockTaskFunc := func() error { return nil }
@@ -59,4 +65,22 @@ func TestWorkerPool_GetRegisteredTask(t *testing.T) {
 	task, err = taskRegistrar.GetRegisteredTask("taskName1")
 	assert.NotNil(t, err)
 	assert.Nil(t, task)
+}
+
+func TestTaskRegistrar_SendTaskWithContext(t *testing.T) {
+	mockBroker := broker.NewMockBroker(t)
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
+	mockBroker.On("Publish", mock.Anything, mock.Anything).Return(nil)
+	// Create a mock task signature
+	mockSignature := &schema.Signature{
+		UUID: "mockUUID",
+	}
+	err := taskRegistrar.SendTask(mockSignature)
+	assert.Nil(t, err)
+
+	mockBroker = broker.NewMockBroker(t)
+	taskRegistrar = NewDefaultTaskRegistrar(mockBroker)
+	mockBroker.On("Publish", mock.Anything, mock.Anything).Return(errors.New("test error"))
+	err = taskRegistrar.SendTask(mockSignature)
+	assert.NotNil(t, err)
 }

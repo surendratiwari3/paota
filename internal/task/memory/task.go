@@ -90,6 +90,8 @@ func (r *DefaultTaskRegistrar) Processor(job interface{}) error {
 }
 
 func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
+	multiple := false
+	requeue := false
 	if amqpJob, ok := job.(amqp.Delivery); !ok {
 		return errors.ErrUnsupported
 	} else if len(amqpJob.Body) == 0 {
@@ -108,50 +110,43 @@ func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
 		return err
 	} else if registeredTaskFunc, err := r.GetRegisteredTask(signature.Name); err != nil {
 		logger.ApplicationLogger.Error("invalid task function")
+		amqpJob.Nack(multiple, requeue)
 		return appError.ErrTaskMustBeFunc
 	} else if registeredTaskFunc == nil {
 		logger.ApplicationLogger.Error("task is not registered")
+		amqpJob.Nack(multiple, requeue)
 		return appError.ErrTaskNotRegistered
-	} else if fn, ok := registeredTaskFunc.(func(*schema.Signature) error); ok {
-		if err := fn(signature); err == nil {
-			return amqpJob.Ack(false)
-		} else if err := r.retry(signature, err); err != nil {
-			return amqpJob.Nack(false, true)
-		} else {
-			return amqpJob.Nack(false, false)
+	} else if fn, ok := registeredTaskFunc.(func(*schema.Signature) error); !ok {
+		return amqpJob.Nack(multiple, requeue)
+	} else if err = fn(signature); err == nil {
+		err := amqpJob.Ack(false)
+		if err != nil {
+			return err
 		}
+	} else if err = r.retryTask(signature); err != nil {
+		requeue = true
+		return amqpJob.Nack(multiple, requeue)
+	} else {
+		return amqpJob.Ack(false)
 	}
-
 	return nil
 }
 
-func (r *DefaultTaskRegistrar) retry(signature *schema.Signature, err error) error {
+func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
 	if signature.RetryCount < 1 {
-		return err
+		return nil
 	}
 	signature.RetriesDone = signature.RetriesDone + 1
 	if signature.RetriesDone > signature.RetryCount {
-		return err
+		return nil
 	}
 	retryInterval := r.getRetryInterval(signature.RetriesDone)
+	if retryInterval > 0 {
+		signature.RoutingKey = config.GetConfigProvider().GetConfig().AMQP.DelayedQueue
+	}
 	eta := time.Now().UTC().Add(retryInterval)
 	signature.ETA = &eta
-
 	return r.SendTask(signature)
-}
-
-func (r *DefaultTaskRegistrar) getTaskTTL(task *schema.Signature) int64 {
-	var delayMs int64
-	if task.ETA != nil {
-		now := time.Now().UTC()
-		if task.ETA.After(now) {
-			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
-		}
-	}
-	if delayMs > 0 {
-		task.RoutingKey = config.GetConfigProvider().GetConfig().AMQP.DelayedQueue
-	}
-	return delayMs
 }
 
 func (r *DefaultTaskRegistrar) getRetryInterval(retryCount int) time.Duration {
