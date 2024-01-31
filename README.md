@@ -47,19 +47,19 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 
 ### In Progress
 - [ ] Middleware for task
-- [ ] Retry for task for amqp broker
+
 - [ ] Logging format
 
 ### Planned
 - [ ] API for task management (create/delete/update/get/list)
 - [ ] Release first version 1.0.0.
+- [ ] Schedule Task
 
 ### Future
 - [ ] Integrate third-party API for additional functionality.
 - [ ] Conduct a security audit.
 - [ ] UI/UX for better engagement.
 - [ ] Multi Queue
-- [ ] Schedule Task
 - [ ] Ratelimit based consuming
 - [ ] Consume over Webhook
 - [ ] Webhook for task events
@@ -80,6 +80,7 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 - [x] Consumer task processor based on defined task added
 - [x] CircleCI Integration with generating mock and running unit test
 - [x] Unit test and code coverage
+- [x] Retry for task for amqp broker
 
 ## Getting Started
 
