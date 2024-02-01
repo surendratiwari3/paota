@@ -193,22 +193,14 @@ mockery --inpackage --all
 
 ### Benchmark Configuration
 
-The jobs are almost no-op jobs: they simply return nil.
-
-1 Core Cpu
-
-8 GB Ram
-
-Rabbitmq , Consumer and Publisher running on same server
-
-### Running the Benchmarks
-benchmark test are available inside bench directory. it can be run like:
+All these benchmarks are done in a notebook with these configuration:
 
 ```bash
-go test -bench . -count 10 > 10_benchmark_test.txt
-go install golang.org/x/perf/cmd/benchstat@latest
-benchstat 10_benchmark_test.txt
+Processor: 1.8 GHz Dual-Core Intel Core i5
+Memory: 8 GB 1600 MHz DDR3
+
 ```
+The jobs are almost no-op jobs: they simply return nil. Rabbitmq , Consumer and Publisher running on same server
 
 ### Conclusion
 We have acheived benchmarking for 50 publisher publishing request and 1 consumer worker consuming the request at speed of 1700 request per second (concurrency=10 and PrefetchCount=100). If you want to achieve more throughput concurrency can be increased to any extent. 
