@@ -49,7 +49,11 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 - [ ] Middleware for task
 - [ ] Logging format
 - [ ] SAST check integration with circleci
+- [ ] Middleware Support for WorkerPool (requestId in log, authentication, logging)
 - [ ] MongoBackendStorage
+- [ ] Pre and Post Hook at Task Level
+- [ ] Workflow support
+- [ ] Chaining of Task support
 
 ### Planned
 - [ ] API for task management (create/delete/update/get/list)
