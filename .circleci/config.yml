@@ -31,7 +31,6 @@ jobs:
   codeql-analysis:
     docker:
       - image: golang:1.21.5
-
     steps:
       - checkout
       - run:
@@ -43,7 +42,7 @@ jobs:
             chmod 755 codeql
       - run:
           name: Initialize CodeQL Database
-          command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=/home/circleci/project
+          command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=$(pwd)
       - run:
           name: Finalize CodeQL Database
           command: ./codeql/codeql database finalize paota-codeql-database
