@@ -46,10 +46,10 @@ jobs:
             echo $PATH           # Debugging line to check the current PATH
       - run:
           name: Initialize CodeQL Database
-          command: ./codeql/codeql database init my-database --language=go --source-root=/home/circleci/project
+          command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=/home/circleci/project
       - run:
           name: Run CodeQL Analysis
-          command: ./codeql/codeql database analyze my-database
+          command: ./codeql/codeql database analyze paota-codeql-database --format=sarif-latest --output=./temp/results-js.sarif
 
 workflows:
   version: 2
