@@ -49,7 +49,7 @@ jobs:
           command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=/home/circleci/project
       - run:
           name: Finalize CodeQL Database
-          command: ./codeql/codeql database finalize my-database
+          command: ./codeql/codeql database finalize paota-codeql-database
       - run:
           name: Run CodeQL Analysis
           command: ./codeql/codeql database analyze paota-codeql-database --format=sarif-latest --output=./temp/results-js.sarif
