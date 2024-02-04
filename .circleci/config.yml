@@ -40,11 +40,7 @@ jobs:
             wget https://github.com/github/codeql-action/releases/latest/download/codeql-bundle-linux64.tar.gz -O codeql-bundle-linux64.tar.gz
             tar xzvf codeql-bundle-linux64.tar.gz
             rm codeql-bundle-linux64.tar.gz
-            chmod +x codeql
-            sudo cp codeql/codeql /usr/local/bin/codeql
-            ls -l /usr/local/bin  # Debugging line to check the contents of /usr/local/bin
-            echo $PATH           # Debugging line to check the current PATH
-            ls -lrt
+            chmod 755 codeql
       - run:
           name: Initialize CodeQL Database
           command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=/home/circleci/project
