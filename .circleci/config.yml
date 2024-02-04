@@ -30,7 +30,7 @@ jobs:
 
   codeql-analysis:
     docker:
-      - image: cimg/go:1.21.5  # Use an appropriate Go image
+      - image: golang:1.21.5
 
     steps:
       - checkout
