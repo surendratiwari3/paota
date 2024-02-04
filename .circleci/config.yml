@@ -1,3 +1,5 @@
+version: 2.1
+
 jobs:
   build:
     docker:
@@ -26,9 +28,31 @@ jobs:
       - store_artifacts:
           path: /tmp/artifacts
 
-version: 2.1
+  codeql-analysis:
+    docker:
+      - image: cimg/go:1.21.5  # Use an appropriate Go image
+
+    steps:
+      - checkout
+      - run:
+          name: Install CodeQL CLI
+          command: |
+            curl -L https://github.com/github/codeql-action/releases/latest/download/codeql-runner-linux -o codeql-runner
+            chmod +x codeql-runner
+            sudo mv codeql-runner /usr/local/bin/codeql
+      - run:
+          name: Initialize CodeQL Database
+          command: codeql database init my-database --language=go
+      - run:
+          name: Run CodeQL Analysis
+          command: codeql database analyze my-database $CIRCLE_WORKING_DIRECTORY/$CIRCLE_PROJECT_REPONAME
+
 workflows:
   version: 2
   build:
     jobs:
       - build
+      - codeql-analysis:
+          context: org-global
+          requires:
+            - build
