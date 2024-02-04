@@ -42,7 +42,7 @@ jobs:
             chmod 755 codeql
       - run:
           name: Initialize CodeQL Database
-          command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=$(pwd)/paota
+          command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=$(pwd)
       - run:
           name: Finalize CodeQL Database
           command: ./codeql/codeql database finalize paota-codeql-database
