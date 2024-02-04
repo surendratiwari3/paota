@@ -37,16 +37,19 @@ jobs:
       - run:
           name: Install CodeQL CLI
           command: |
-            curl -L https://github.com/github/codeql-action/releases/latest/download/codeql-runner-linux -o codeql-runner
-            chmod +x codeql-runner
-            sudo ./codeql-runner manage install
-            ./codeql-runner/codeql --version  # Debugging line to check CodeQL version
+            wget https://github.com/github/codeql-action/releases/latest/download/codeql-bundle-linux64.tar.gz -O codeql-bundle-linux64.tar.gz
+            tar xzvf codeql-bundle-linux64.tar.gz
+            rm codeql-bundle-linux64.tar.gz
+            chmod +x codeql
+            sudo mv codeql/codeql /usr/local/bin/codeql
+            ls -l /usr/local/bin  # Debugging line to check the contents of /usr/local/bin
+            echo $PATH           # Debugging line to check the current PATH
       - run:
           name: Initialize CodeQL Database
-          command: ./codeql-runner/codeql database init my-database --language=go
+          command: codeql database init my-database --language=go
       - run:
           name: Run CodeQL Analysis
-          command: ./codeql-runner/codeql database analyze my-database $CIRCLE_WORKING_DIRECTORY/$CIRCLE_PROJECT_REPONAME
+          command: codeql database analyze my-database $CIRCLE_WORKING_DIRECTORY/$CIRCLE_PROJECT_REPONAME
 
 workflows:
   version: 2
