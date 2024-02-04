@@ -41,15 +41,15 @@ jobs:
             tar xzvf codeql-bundle-linux64.tar.gz
             rm codeql-bundle-linux64.tar.gz
             chmod +x codeql
-            sudo mv codeql/codeql /usr/local/bin/codeql
+            sudo cp codeql/codeql /usr/local/bin/codeql
             ls -l /usr/local/bin  # Debugging line to check the contents of /usr/local/bin
             echo $PATH           # Debugging line to check the current PATH
       - run:
           name: Initialize CodeQL Database
-          command: codeql database init my-database --language=go
+          command: ./codeql/codeql database init my-database --language=go
       - run:
           name: Run CodeQL Analysis
-          command: codeql database analyze my-database $CIRCLE_WORKING_DIRECTORY/$CIRCLE_PROJECT_REPONAME
+          command: ./codeql/codeql database analyze my-database $CIRCLE_WORKING_DIRECTORY/$CIRCLE_PROJECT_REPONAME
 
 workflows:
   version: 2
