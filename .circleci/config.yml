@@ -40,6 +40,8 @@ jobs:
             curl -L https://github.com/github/codeql-action/releases/latest/download/codeql-runner-linux -o codeql-runner
             chmod +x codeql-runner
             sudo mv codeql-runner /usr/local/bin/codeql
+            ls -l /usr/local/bin  # Debugging line to check the contents of /usr/local/bin
+            echo $PATH           # Debugging line to check the current PATH
       - run:
           name: Initialize CodeQL Database
           command: codeql database init my-database --language=go
