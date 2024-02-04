@@ -44,6 +44,7 @@ jobs:
             sudo cp codeql/codeql /usr/local/bin/codeql
             ls -l /usr/local/bin  # Debugging line to check the contents of /usr/local/bin
             echo $PATH           # Debugging line to check the current PATH
+            ls -lrt
       - run:
           name: Initialize CodeQL Database
           command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=/home/circleci/project
