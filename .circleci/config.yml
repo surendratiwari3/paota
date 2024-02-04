@@ -46,7 +46,7 @@ jobs:
             echo $PATH           # Debugging line to check the current PATH
       - run:
           name: Initialize CodeQL Database
-          command: ./codeql/codeql database init my-database --language=go --source-root=$CIRCLE_WORKING_DIRECTORY/$CIRCLE_PROJECT_REPONAME
+          command: ./codeql/codeql database init my-database --language=go --source-root=$CIRCLE_WORKING_DIRECTORY
       - run:
           name: Run CodeQL Analysis
           command: ./codeql/codeql database analyze my-database
