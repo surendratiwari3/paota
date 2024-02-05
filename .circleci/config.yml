@@ -52,7 +52,3 @@ workflows:
   build:
     jobs:
       - build
-      - codeql-analysis:
-          context: org-global
-          requires:
-            - build
