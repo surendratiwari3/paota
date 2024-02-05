@@ -44,9 +44,6 @@ jobs:
           name: Initialize CodeQL Database
           command: ./codeql/codeql database init paota-codeql-database --language=go --source-root=$(pwd)
       - run:
-          name: Finalize CodeQL Database
-          command: ./codeql/codeql database finalize paota-codeql-database
-      - run:
           name: Run CodeQL Analysis
           command: ./codeql/codeql database analyze paota-codeql-database --format=sarif-latest --output=./temp/results-js.sarif
 
