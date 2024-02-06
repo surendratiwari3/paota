@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/internal/config"
 	"github.com/surendratiwari3/paota/internal/schema"
@@ -14,6 +13,14 @@ import (
 	"github.com/surendratiwari3/paota/internal/logger"
 	"os"
 )
+
+// UserRecord represents the structure of user records.
+type UserRecord struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	// Add other fields as needed
+}
 
 func main() {
 
@@ -45,26 +52,6 @@ func main() {
 		os.Exit(0)
 	}
 	logger.ApplicationLogger.Info("newWorkerPool created successfully")
-	// Register tasks
-	regTasks := map[string]interface{}{
-		"Print": Print,
-	}
-	err = newWorkerPool.RegisterTasks(regTasks)
-	if err != nil {
-		logger.ApplicationLogger.Info("error while registering task")
-		return
-	}
-	logger.ApplicationLogger.Info(newWorkerPool.IsTaskRegistered("add"))
-
-	logger.ApplicationLogger.Info("Worker is also started")
-
-	// UserRecord represents the structure of user records.
-	type UserRecord struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
-		// Add other fields as needed
-	}
 
 	// Replace this with the received user record
 	user := UserRecord{
@@ -102,9 +89,4 @@ func main() {
 	}
 
 	waitGrp.Wait()
-}
-
-func Print(arg *schema.Signature) error {
-	logger.ApplicationLogger.Info("Print Function In Error")
-	return errors.New("checking retry")
 }

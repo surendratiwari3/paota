@@ -65,12 +65,6 @@ func main() {
 	}
 }
 
-/*
-func Print(arg *schema.Signature) error {
-	logger.ApplicationLogger.Info("Print Function Error")
-	return errors.New("checking retry")
-}*/
-
 func Print(arg *schema.Signature) error {
 	logger.ApplicationLogger.Info("success")
 	return nil
