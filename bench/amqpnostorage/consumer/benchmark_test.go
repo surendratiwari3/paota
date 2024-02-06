@@ -13,13 +13,13 @@ import (
 )
 
 func BenchmarkAmqpNoStore(b *testing.B) {
+	workerPool := SetupConsumer()
 	for n := 0; n < b.N; n++ {
-		Consumer()
+		Consumer(workerPool)
 	}
 }
 
-func Consumer() {
-
+func SetupConsumer() workerpool.Pool {
 	logger.ApplicationLogger = logrus.StandardLogger()
 	cnf := config.Config{
 		Broker:        "amqp",
@@ -36,9 +36,8 @@ func Consumer() {
 	err := config.GetConfigProvider().SetApplicationConfig(cnf)
 	if err != nil {
 		logger.ApplicationLogger.Error("config error", err)
-		return
+		return nil
 	}
-
 	newWorkerPool, err := workerpool.NewWorkerPool(context.Background(), 10, "testWorker")
 	if err != nil {
 		logger.ApplicationLogger.Error("workerPool is not created", err)
@@ -48,24 +47,28 @@ func Consumer() {
 		os.Exit(0)
 	}
 	logger.ApplicationLogger.Info("newWorkerPool created successfully")
+	return newWorkerPool
+}
+
+func Consumer(pool workerpool.Pool) {
 	// Register tasks
 	regTasks := map[string]interface{}{
 		"returnNil": ReturnNil,
 	}
-	err = newWorkerPool.RegisterTasks(regTasks)
+	err := pool.RegisterTasks(regTasks)
 	if err != nil {
 		logger.ApplicationLogger.Info("error while registering task")
 		return
 	}
 	logger.ApplicationLogger.Info("Worker is also started")
 	go func() {
-		err = newWorkerPool.Start()
+		err = pool.Start()
 		if err != nil {
 			logger.ApplicationLogger.Error("error while starting worker")
 		}
 	}()
 	time.Sleep(5 * time.Minute)
-	newWorkerPool.Stop()
+	pool.Stop()
 }
 
 func ReturnNil(arg *schema.Signature) error {

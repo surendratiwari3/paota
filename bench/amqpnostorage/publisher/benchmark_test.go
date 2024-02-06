@@ -13,13 +13,21 @@ import (
 )
 
 func BenchmarkAmqpNoStore(b *testing.B) {
+	workerPool := SetupPublisher()
 	for n := 0; n < b.N; n++ {
-		Publisher()
+		Publisher(workerPool)
 	}
 }
 
-func Publisher() {
+// UserRecord represents the structure of user records.
+type UserRecord struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	// Add other fields as needed
+}
 
+func SetupPublisher() workerpool.Pool {
 	logger.ApplicationLogger = logrus.StandardLogger()
 	cnf := config.Config{
 		Broker:        "amqp",
@@ -36,9 +44,8 @@ func Publisher() {
 	err := config.GetConfigProvider().SetApplicationConfig(cnf)
 	if err != nil {
 		logger.ApplicationLogger.Error("config error", err)
-		return
+		return nil
 	}
-
 	newWorkerPool, err := workerpool.NewWorkerPool(context.Background(), 10, "testWorker")
 	if err != nil {
 		logger.ApplicationLogger.Error("workerPool is not created", err)
@@ -48,26 +55,10 @@ func Publisher() {
 		os.Exit(0)
 	}
 	logger.ApplicationLogger.Info("newWorkerPool created successfully")
-	// Register tasks
-	regTasks := map[string]interface{}{
-		"returnNil": ReturnNil,
-	}
-	err = newWorkerPool.RegisterTasks(regTasks)
-	if err != nil {
-		logger.ApplicationLogger.Info("error while registering task")
-		return
-	}
-	logger.ApplicationLogger.Info(newWorkerPool.IsTaskRegistered("add"))
+	return newWorkerPool
+}
 
-	logger.ApplicationLogger.Info("Worker is also started")
-
-	// UserRecord represents the structure of user records.
-	type UserRecord struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
-		// Add other fields as needed
-	}
+func Publisher(pool workerpool.Pool) {
 
 	// Replace this with the received user record
 	user := UserRecord{
@@ -94,10 +85,6 @@ func Publisher() {
 	}
 
 	for i := 0; i < 10000; i++ {
-		newWorkerPool.SendTaskWithContext(context.Background(), returnNil)
+		pool.SendTaskWithContext(context.Background(), returnNil)
 	}
-}
-
-func ReturnNil(arg *schema.Signature) error {
-	return nil
 }
