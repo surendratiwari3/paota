@@ -50,12 +50,12 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 ### In Progress
 - [ ] Middleware for task
 - [ ] Logging format
-- [ ] SAST check integration with circleci
 - [ ] Middleware Support for WorkerPool (requestId in log, authentication, logging)
 - [ ] MongoBackendStorage
 - [ ] Pre and Post Hook at Task Level
 - [ ] Workflow support
 - [ ] Chaining of Task support
+- [ ] Coverage Check integration with sonarqube
 
 ### Planned
 - [ ] API for task management (create/delete/update/get/list)
@@ -88,6 +88,7 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 - [x] CircleCI Integration with generating mock and running unit test
 - [x] Unit test and code coverage
 - [x] Retry for task for amqp broker
+- [x] SAST check integration with sonarcloud and codeql
 
 ## Getting Started
 
