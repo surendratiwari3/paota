@@ -1,5 +1,7 @@
 # paota [![CircleCI](https://dl.circleci.com/status-badge/img/gh/surendratiwari3/paota/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/surendratiwari3/paota/tree/main)
 
+[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=surendratiwari3_paota)](https://sonarcloud.io/summary/new_code?id=surendratiwari3_paota)
+
 An efficient Go task queue package, facilitating the seamless orchestration and execution of tasks. Alternative to machinery and Celery.
 
 ## Architecture
