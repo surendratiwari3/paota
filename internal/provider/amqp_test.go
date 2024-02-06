@@ -13,7 +13,7 @@ func TestNewAMQPAdapterWithNilConfig(t *testing.T) {
 	amqpConfig := &config.Config{
 		Broker: "amqp",
 		AMQP: &config.AMQPConfig{
-			Url:                "amqp://guest:guest@localhost:5672/",
+			Url:                "amqp://localhost:5672/",
 			HeartBeatInterval:  10,
 			ConnectionPoolSize: 3,
 		},
@@ -39,7 +39,7 @@ func TestNewAMQPAdapterWithValidConfig(t *testing.T) {
 	amqpConfig := &config.Config{
 		Broker: "amqp",
 		AMQP: &config.AMQPConfig{
-			Url:                "amqp://guest:guest@localhost:5672/",
+			Url:                "amqp://localhost:5672/",
 			HeartBeatInterval:  10,
 			ConnectionPoolSize: 3,
 		},
@@ -60,7 +60,7 @@ func TestCreateConnection_ConnectionRefused(t *testing.T) {
 	amqpConfig := &config.Config{
 		Broker: "amqp",
 		AMQP: &config.AMQPConfig{
-			Url:                "amqp://guest:guest@localhost:5672/",
+			Url:                "amqp://localhost:5672/",
 			HeartBeatInterval:  10,
 			ConnectionPoolSize: 3,
 		},

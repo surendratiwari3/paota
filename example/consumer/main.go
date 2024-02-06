@@ -24,7 +24,7 @@ func main() {
 		//Store:         "null",
 		TaskQueueName: "paota_task_queue",
 		AMQP: &config.AMQPConfig{
-			Url:                "amqp://guest:guest@localhost:55005/",
+			Url:                "amqp://localhost:5672/",
 			Exchange:           "paota_task_exchange",
 			ExchangeType:       "direct",
 			BindingKey:         "paota_task_binding_key",

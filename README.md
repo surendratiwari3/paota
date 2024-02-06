@@ -132,7 +132,7 @@ Before using the `paota` package, it's essential to understand the AMQP (Advance
 Here's an example of how you can configure the `AMQPConfig` using environment variables:
 
 ```bash
-export URL=amqp://guest:guest@localhost:5672/
+export URL=amqp://guest:guest@localhost:55005/
 export EXCHANGE=paota_task_exchange
 export EXCHANGE_TYPE=direct
 export BINDING_KEY=paota_task_binding_key
