@@ -10,15 +10,12 @@ import (
 	"github.com/surendratiwari3/paota/internal/factory"
 	"github.com/surendratiwari3/paota/internal/schema"
 	"github.com/surendratiwari3/paota/internal/task"
+	"os"
 	"testing"
 	"time"
 )
 
-func TestNewWorkerPool(t *testing.T) {
-	// Mock the broker for testing
-	mockBroker := broker.NewMockBroker(t)
-	mockTaskRegistrar := task.NewMockTaskRegistrarInterface(t)
-	// Create a mock AMQPAdapter with a valid config
+func setupConfigProvider() {
 	mockConfigProvider := new(config.MockConfigProvider)
 	mockConfigProvider.On("GetConfig").Return(&config.Config{
 		Broker:        "amqp",
@@ -29,12 +26,19 @@ func TestNewWorkerPool(t *testing.T) {
 			ConnectionPoolSize: 2,
 		},
 	}, nil)
+	config.SetConfigProvider(mockConfigProvider)
+}
+
+func TestNewWorkerPool(t *testing.T) {
+	setupConfigProvider()
+	// Mock the broker for testing
+	mockBroker := broker.NewMockBroker(t)
+	mockTaskRegistrar := task.NewMockTaskRegistrarInterface(t)
 
 	mockFactory := new(factory.MockIFactory)
 	mockFactory.On("CreateBroker").Return(mockBroker, nil)
 	mockFactory.On("CreateStore").Return(nil)
 	mockFactory.On("CreateTaskRegistrar", mock.Anything).Return(mockTaskRegistrar)
-	config.SetConfigProvider(mockConfigProvider)
 
 	globalFactory = mockFactory
 
@@ -48,6 +52,7 @@ func TestNewWorkerPool(t *testing.T) {
 }
 
 func TestWorkerPool_SendTaskWithContext(t *testing.T) {
+	setupConfigProvider()
 	mockBroker := &broker.MockBroker{}
 
 	mockBroker.On("Publish", mock.Anything, mock.Anything).Return(nil)
@@ -56,23 +61,10 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 	mockTaskRegistrar := task.NewMockTaskRegistrarInterface(t)
 	mockTaskRegistrar.On("SendTaskWithContext", mock.Anything, mock.Anything).Return(nil)
 
-	// Create a mock AMQPAdapter with a valid config
-	mockConfigProvider := new(config.MockConfigProvider)
-	mockConfigProvider.On("GetConfig").Return(&config.Config{
-		Broker:        "amqp",
-		TaskQueueName: "test",
-		AMQP: &config.AMQPConfig{
-			Url:                "amqp://localhost:5672",
-			HeartBeatInterval:  30,
-			ConnectionPoolSize: 2,
-		},
-	}, nil)
-
 	mockFactory := new(factory.MockIFactory)
 	mockFactory.On("CreateBroker").Return(mockBroker, nil)
 	mockFactory.On("CreateStore").Return(nil)
 	mockFactory.On("CreateTaskRegistrar", mock.Anything).Return(mockTaskRegistrar)
-	config.SetConfigProvider(mockConfigProvider)
 
 	globalFactory = mockFactory
 
@@ -98,7 +90,8 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 	assert.Equal(t, "Pending", state.Status)
 }
 
-func TestWorkerPool_StartWithBrokerInError(t *testing.T) {
+func TestWorkerPool_Start(t *testing.T) {
+	setupConfigProvider()
 	mockBroker := broker.NewMockBroker(t)
 	mockBroker.On("StartConsumer", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("start consumer failed"))
 	mockBroker.On("StopConsumer").Return()
@@ -110,19 +103,6 @@ func TestWorkerPool_StartWithBrokerInError(t *testing.T) {
 	mockFactory.On("CreateBroker").Return(mockBroker, nil)
 	mockFactory.On("CreateStore").Return(nil)
 	mockFactory.On("CreateTaskRegistrar", mock.Anything).Return(mockTaskReg)
-
-	// Create a mock AMQPAdapter with a valid config
-	mockConfigProvider := new(config.MockConfigProvider)
-	mockConfigProvider.On("GetConfig").Return(&config.Config{
-		Broker:        "amqp",
-		TaskQueueName: "test",
-		AMQP: &config.AMQPConfig{
-			Url:                "amqp://localhost:5672",
-			HeartBeatInterval:  30,
-			ConnectionPoolSize: 2,
-		},
-	}, nil)
-	config.SetConfigProvider(mockConfigProvider)
 
 	globalFactory = mockFactory
 
@@ -140,15 +120,16 @@ func TestWorkerPool_StartWithBrokerInError(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	wp.Stop()
 	assert.Nil(t, err)
+}
 
-	/*
-		go func() {
-			wp = false
-			err = wp.Start()
-			assert.Nil(t, err)
-		}()
-		time.Sleep(100 * time.Millisecond)
-		wp.Stop()
-		wp.started = false
-		wp.Stop()*/
+func TestMain(m *testing.M) {
+	// Perform setup tasks here
+
+	// Run tests
+	exitCode := m.Run()
+
+	// Perform cleanup tasks here
+
+	// Exit with the same exit code as the tests
+	os.Exit(exitCode)
 }
