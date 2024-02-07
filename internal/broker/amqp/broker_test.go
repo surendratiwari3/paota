@@ -38,7 +38,7 @@ func TestNewAMQPBroker(t *testing.T) {
 	mockAmqpProvider.On("CreateConnectionPool").Return(nil)
 	mockAmqpProvider.On("GetConnectionFromPool").Return(conn, nil)
 	mockAmqpProvider.On("ReleaseConnectionToPool", conn).Return(nil)
-	mockAmqpProvider.On("CreateAmqpChannel", conn).Return(channel, nil)
+	mockAmqpProvider.On("CreateAmqpChannel", conn, false).Return(channel, nil, nil)
 	mockAmqpProvider.On("DeclareExchange", channel, exchangeName, exchangeType).Return(nil)
 	mockAmqpProvider.On("DeclareQueue", channel, mock.Anything, mock.Anything).Return(nil)
 	mockAmqpProvider.On("QueueExchangeBind", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
