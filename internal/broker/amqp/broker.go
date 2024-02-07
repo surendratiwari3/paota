@@ -100,7 +100,10 @@ func NewAMQPBroker() (broker.Broker, error) {
 func (b *AMQPBroker) processDelivery(ctx context.Context, amqpMsg amqp.Delivery, workerGroup workergroup.WorkerGroupInterface) error {
 	if len(amqpMsg.Body) == 0 {
 		logger.ApplicationLogger.Error("empty message, return")
-		amqpMsg.Nack(false, false)    // multiple, requeue
+		err := amqpMsg.Nack(false, false)
+		if err != nil {
+			return err
+		} // multiple, requeue
 		return errors.ErrEmptyMessage // RabbitMQ down?
 	}
 
@@ -111,30 +114,6 @@ func (b *AMQPBroker) processDelivery(ctx context.Context, amqpMsg amqp.Delivery,
 
 // Publish sends a task to the AMQP broker
 func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) error {
-
-	// Get a connection from the pool
-	conn, err := b.getConnection()
-	if err != nil {
-		return err
-	}
-	defer func(amqpProvider provider.AmqpProviderInterface, i interface{}) {
-		err := b.amqpProvider.ReleaseConnectionToPool(i)
-		if err != nil {
-			//TODO:error handling
-		}
-	}(b.amqpProvider, conn)
-
-	// Create a channel
-	channel, err := b.amqpProvider.CreateAmqpChannel(conn)
-	if err != nil {
-		return err
-	}
-	defer func(channel *amqp.Channel) {
-		err := b.amqpProvider.CloseAmqpChannel(channel)
-		if err != nil {
-			//TODO:error handling
-		}
-	}(channel)
 
 	taskJSON, err := json.Marshal(signature)
 	if err != nil {
@@ -156,7 +135,7 @@ func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) e
 		signature.RoutingKey = b.getRoutingKey()
 	}
 
-	return b.amqpProvider.AmqpPublish(ctx, channel, signature.RoutingKey, amqpPublishMessage, b.getExchangeName())
+	return b.amqpProvider.AmqpPublishWithConfirm(ctx, signature.RoutingKey, amqpPublishMessage, b.getExchangeName())
 }
 
 // setupExchangeQueueBinding sets up the exchange, queue, and binding
@@ -172,7 +151,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 		}
 	}(b.amqpProvider, amqpConn)
 
-	channel, err := b.amqpProvider.CreateAmqpChannel(amqpConn)
+	channel, _, err := b.amqpProvider.CreateAmqpChannel(amqpConn, false)
 	if err != nil {
 		return err
 	}
@@ -245,7 +224,7 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 	}(b.amqpProvider, conn)
 
 	// Create a channel
-	channel, err := b.amqpProvider.CreateAmqpChannel(conn)
+	channel, _, err := b.amqpProvider.CreateAmqpChannel(conn, false)
 	if err != nil {
 		return err
 	}
@@ -283,7 +262,10 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 			return err
 		case d := <-deliveries:
 			b.processingWG.Add(1)
-			b.processDelivery(ctx, d, workerGroup)
+			err := b.processDelivery(ctx, d, workerGroup)
+			if err != nil {
+				logger.ApplicationLogger.Warning("delivery in error, continue")
+			}
 		case <-b.stopChannel:
 			b.doneStopChannel <- struct{}{}
 			logger.ApplicationLogger.Warning("stop request in consumer, exit")

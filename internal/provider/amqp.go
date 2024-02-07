@@ -11,7 +11,8 @@ import (
 
 type AmqpProviderInterface interface {
 	AmqpPublish(ctx context.Context, channel *amqp.Channel, routingKey string, amqpMsg amqp.Publishing, exchangeName string) error
-	CreateAmqpChannel(conn *amqp.Connection) (*amqp.Channel, error)
+	AmqpPublishWithConfirm(ctx context.Context, routingKey string, amqpMsg amqp.Publishing, exchangeName string) error
+	CreateAmqpChannel(conn *amqp.Connection, confirm bool) (*amqp.Channel, chan amqp.Confirmation, error)
 	CloseAmqpChannel(channel *amqp.Channel) error
 	CloseConnection() error
 	CreateConnectionPool() error
@@ -34,8 +35,20 @@ func NewAmqpProvider(amqpConfig *config.AMQPConfig) AmqpProviderInterface {
 	return &amqpProvider{amqpConf: amqpConfig}
 }
 
-func (ap *amqpProvider) CreateAmqpChannel(conn *amqp.Connection) (*amqp.Channel, error) {
-	return conn.Channel()
+func (ap *amqpProvider) CreateAmqpChannel(conn *amqp.Connection, confirm bool) (*amqp.Channel, chan amqp.Confirmation, error) {
+	channel, err := conn.Channel()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if confirm && channel != nil {
+		if err = channel.Confirm(false); err != nil {
+			return nil, nil, err
+		}
+		return channel, channel.NotifyPublish(make(chan amqp.Confirmation, 1)), err
+	}
+
+	return channel, nil, err
 }
 
 func (ap *amqpProvider) CloseAmqpChannel(channel *amqp.Channel) error {
@@ -100,6 +113,61 @@ func (ap *amqpProvider) AmqpPublish(ctx context.Context, channel *amqp.Channel, 
 	)
 
 	return err
+}
+
+func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey string, amqpMsg amqp.Publishing, exchangeName string) error {
+
+	// Get a connection from the pool
+	conn, err := ap.GetAmqpConnection()
+	if err != nil {
+		return err
+	}
+	defer func(amqpProvider AmqpProviderInterface, i interface{}) {
+		err := ap.ReleaseConnectionToPool(i)
+		if err != nil {
+			//TODO:error handling
+		}
+	}(ap, conn)
+
+	// Create a channel
+	channel, confirmChan, err := ap.CreateAmqpChannel(conn, true)
+	if err != nil {
+		return err
+	}
+	defer func(channel *amqp.Channel) {
+		err := ap.CloseAmqpChannel(channel)
+		if err != nil {
+			//TODO:error handling
+		}
+	}(channel)
+
+	// Publish the message to the exchange
+	err = channel.PublishWithContext(ctx,
+		exchangeName, // exchange
+		routingKey,   // routing key
+		false,        // mandatory
+		false,        // immediate
+		amqpMsg,
+	)
+
+	//TODO: need to handle in non-blocking way
+	confirmed := <-confirmChan
+	if confirmed.Ack {
+		return nil
+	}
+
+	return err
+}
+
+func (ap *amqpProvider) GetAmqpConnection() (*amqp.Connection, error) {
+	amqpConn, err := ap.GetConnectionFromPool()
+	if err != nil {
+		return nil, err
+	}
+	if amqpConnection, ok := amqpConn.(*amqp.Connection); ok {
+		return amqpConnection, nil
+	}
+	return nil, nil
 }
 
 func (ap *amqpProvider) SetChannelQoS(channel *amqp.Channel, prefetchCount int) error {
