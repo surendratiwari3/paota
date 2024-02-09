@@ -60,7 +60,6 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 ### Planned
 - [ ] API for task management (create/delete/update/get/list)
 - [ ] Release first version 1.0.0.
-- [ ] Schedule Task
 
 ### Future
 - [ ] Integrate third-party API for additional functionality.
@@ -89,6 +88,7 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 - [x] Unit test and code coverage
 - [x] Retry for task for amqp broker
 - [x] SAST check integration with sonarcloud and codeql
+- [x] Schedule Task
 
 ## Getting Started
 
