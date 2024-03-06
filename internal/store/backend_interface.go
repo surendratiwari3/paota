@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/schema"
 )
 
 // Backend - a common interface for all result Store

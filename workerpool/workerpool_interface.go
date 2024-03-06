@@ -3,8 +3,8 @@ package workerpool
 import (
 	"context"
 	"github.com/surendratiwari3/paota/internal/broker"
-	"github.com/surendratiwari3/paota/internal/schema"
 	"github.com/surendratiwari3/paota/internal/store"
+	"github.com/surendratiwari3/paota/schema"
 )
 
 type Pool interface {

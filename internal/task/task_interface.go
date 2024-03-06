@@ -2,7 +2,7 @@ package task
 
 import (
 	"context"
-	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/schema"
 )
 
 type TaskRegistrarInterface interface {

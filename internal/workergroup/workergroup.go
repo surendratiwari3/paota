@@ -1,8 +1,8 @@
 package workergroup
 
 import (
-	"github.com/surendratiwari3/paota/internal/logger"
 	"github.com/surendratiwari3/paota/internal/task"
+	"github.com/surendratiwari3/paota/logger"
 	"sync"
 )
 

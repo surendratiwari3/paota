@@ -9,12 +9,12 @@ import (
 	"github.com/surendratiwari3/paota/internal/broker"
 	"github.com/surendratiwari3/paota/internal/task"
 
-	"github.com/surendratiwari3/paota/internal/config"
-	"github.com/surendratiwari3/paota/internal/logger"
-	"github.com/surendratiwari3/paota/internal/schema"
-	appError "github.com/surendratiwari3/paota/internal/schema/errors"
+	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/utils"
 	"github.com/surendratiwari3/paota/internal/validation"
+	"github.com/surendratiwari3/paota/logger"
+	"github.com/surendratiwari3/paota/schema"
+	appError "github.com/surendratiwari3/paota/schema/errors"
 	"sync"
 	"time"
 )
