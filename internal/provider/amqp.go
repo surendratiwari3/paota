@@ -3,8 +3,8 @@ package provider
 import (
 	"context"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/surendratiwari3/paota/internal/config"
-	"github.com/surendratiwari3/paota/internal/schema/errors"
+	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/schema/errors"
 	"sync"
 	"time"
 )

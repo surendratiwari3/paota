@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"github.com/sirupsen/logrus"
-	"github.com/surendratiwari3/paota/internal/config"
-	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/workerpool"
 
 	//"github.com/surendratiwari3/paota/example/task"
-	"github.com/surendratiwari3/paota/internal/logger"
+	"github.com/surendratiwari3/paota/logger"
 	"os"
 )
 

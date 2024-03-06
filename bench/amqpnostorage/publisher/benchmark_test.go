@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/surendratiwari3/paota/bench/amqpnostorage"
-	"github.com/surendratiwari3/paota/internal/schema"
+	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/workerpool"
 	"testing"
 )

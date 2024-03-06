@@ -1,13 +1,13 @@
 package factory
 
 import (
+	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/broker"
 	amqpBroker "github.com/surendratiwari3/paota/internal/broker/amqp"
-	"github.com/surendratiwari3/paota/internal/config"
-	"github.com/surendratiwari3/paota/internal/logger"
-	appErrors "github.com/surendratiwari3/paota/internal/schema/errors"
 	"github.com/surendratiwari3/paota/internal/task"
 	"github.com/surendratiwari3/paota/internal/task/memory"
+	"github.com/surendratiwari3/paota/logger"
+	appErrors "github.com/surendratiwari3/paota/schema/errors"
 )
 
 type IFactory interface {

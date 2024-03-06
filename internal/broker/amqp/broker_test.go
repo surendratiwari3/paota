@@ -5,7 +5,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/surendratiwari3/paota/internal/config"
+	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/provider"
 	"testing"
 )
