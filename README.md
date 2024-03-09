@@ -214,6 +214,8 @@ The jobs are almost no-op jobs: they simply return nil. Rabbitmq , Consumer and 
 
 This repository contains a performance test script for consuming data from RabbitMQ and inserting it into MongoDB with a uniform structure. The goal of this test is to ensure that the system can handle a high message throughput rate while consuming and processing more than 10 lakh (10 million) data records within 5 minutes, with an acknowledgment rate of more than 12k messages per second and same data stored in MongoDb. The test is conducted on a MacBook with 16GB RAM, and both MongoDB and RabbitMQ are hosted locally.
 
+This screenshot provides a reference for the data acknowledgment rate from RabbitMQ and the corresponding data stored in MongoDB during the performance test.
+
 ![Ack Rate](https://github.com/manishjha1991/paota/blob/performance-mongodb-ack-rate/docs/images/ackrate.png?raw=true)
 
 
