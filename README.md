@@ -210,6 +210,11 @@ Memory: 8 GB 1600 MHz DDR3
 ```
 The jobs are almost no-op jobs: they simply return nil. Rabbitmq , Consumer and Publisher running on same server
 
+### RabbitMQ to MongoDB Data Processing Performance Test
+
+This repository contains a performance test script for consuming data from RabbitMQ and inserting it into MongoDB with a uniform structure. The goal of this test is to ensure that the system can handle a high message throughput rate while consuming and processing more than 10 lakh (10 million) data records within 5 minutes, with an acknowledgment rate of more than 12k messages per second and same data stored in MongoDb. The test is conducted on a MacBook with 16GB RAM, and both MongoDB and RabbitMQ are hosted locally.
+
+
 ### Conclusion
 We have acheived benchmarking for 50 publisher publishing request and 1 consumer worker consuming the request at speed of 7000 request per second (concurrency=10 and PrefetchCount=100). If you want to achieve more throughput concurrency can be increased to any extent. 
 
