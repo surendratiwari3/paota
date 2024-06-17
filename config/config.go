@@ -20,7 +20,7 @@ type Config struct {
 	TaskQueueName     string         `env:"QUEUE_NAME" envDefault:"paota_tasks" validate:"required"`
 	StoreQueueName    string         `env:"STORE_QUEUE_NAME"`
 	AMQP              *AMQPConfig    `envPrefix:"AMQP_"`
-	FailoverQueueName string         `env:"FAILOVER_QUEUE_NAME_" envDefault:"paota_failover"`
+	FailoverQueueName string         `env:"FAILOVER_QUEUE_NAME" envDefault:"paota_failover"`
 	AmqpFailover      *AMQPConfig    `envPrefix:"AMQP_FAILOVER_"`
 	MongoDB           *MongoDBConfig `envPrefix:"MONGO_"`
 }
