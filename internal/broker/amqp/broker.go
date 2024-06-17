@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/broker"
@@ -12,13 +15,11 @@ import (
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/schema/errors"
-	"sync"
-	"time"
 )
 
 // AMQPBroker represents an AMQP broker
 type AMQPBroker struct {
-	config           *config.Config
+	config           *config.AMQPConfig
 	ackChannel       chan uint64
 	connectionsMutex sync.Mutex
 	processingWG     sync.WaitGroup
@@ -26,6 +27,7 @@ type AMQPBroker struct {
 	stopChannel      chan struct{}
 	doneStopChannel  chan struct{}
 	amqpProvider     provider.AmqpProviderInterface
+	queueName        string
 }
 
 // globalAmqpProvider defined just for unit test cases
@@ -46,11 +48,11 @@ func (b *AMQPBroker) getConnection() (*amqp.Connection, error) {
 
 // getRoutingKey gets the routing key from the signature
 func (b *AMQPBroker) getRoutingKey() string {
-	if b.config.AMQP.BindingKey == "" {
+	if b.config.BindingKey == "" {
 		return b.getTaskQueue()
 	}
 	if b.isDirectExchange() {
-		return b.config.AMQP.BindingKey
+		return b.config.BindingKey
 	}
 
 	return b.getTaskQueue()
@@ -58,19 +60,18 @@ func (b *AMQPBroker) getRoutingKey() string {
 
 // isDirectExchange checks if the exchange type is direct
 func (b *AMQPBroker) isDirectExchange() bool {
-	return b.config.AMQP != nil && b.config.AMQP.ExchangeType == "direct"
+	return b.config != nil && b.config.ExchangeType == "direct"
 }
 
 // NewAMQPBroker creates a new instance of the AMQP broker
 // It opens connections to RabbitMQ, declares an exchange, opens a channel,
 // declares and binds the queue, and enables publish notifications
-func NewAMQPBroker() (broker.Broker, error) {
+func NewAMQPBroker(brokerType string) (broker.Broker, error) {
 	cfg := config.GetConfigProvider().GetConfig()
 	amqpErrorChannel := make(chan *amqp.Error, 1)
 	stopChannel := make(chan struct{})
 	doneStopChannel := make(chan struct{})
 	amqpBroker := &AMQPBroker{
-		config:           cfg,
 		connectionsMutex: sync.Mutex{},
 		amqpErrorChannel: amqpErrorChannel,
 		stopChannel:      stopChannel,
@@ -78,8 +79,20 @@ func NewAMQPBroker() (broker.Broker, error) {
 		amqpProvider:     globalAmqpProvider,
 	}
 
+	switch brokerType {
+	case "master":
+		amqpBroker.config = cfg.AMQP
+		amqpBroker.queueName = cfg.TaskQueueName
+	case "failover":
+		amqpBroker.config = cfg.AmqpFailover
+		amqpBroker.queueName = cfg.FailoverQueueName
+	default:
+		logger.ApplicationLogger.Error("Invalid broker type")
+		return nil, errors.ErrUnsupportedBrokerType
+	}
+
 	if amqpBroker.amqpProvider == nil {
-		amqpBroker.amqpProvider = provider.NewAmqpProvider(cfg.AMQP)
+		amqpBroker.amqpProvider = provider.NewAmqpProvider(amqpBroker.config)
 	}
 
 	err := amqpBroker.amqpProvider.CreateConnectionPool()
@@ -189,7 +202,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	}
 
 	// Bind the queue to the exchange
-	err = b.amqpProvider.QueueExchangeBind(channel, b.getTaskQueue(), b.config.AMQP.BindingKey, b.config.AMQP.Exchange)
+	err = b.amqpProvider.QueueExchangeBind(channel, b.getTaskQueue(), b.config.BindingKey, b.config.Exchange)
 	if err != nil {
 		return err
 	}
@@ -277,27 +290,27 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 }
 
 func (b *AMQPBroker) getDelayedQueue() string {
-	return b.config.AMQP.DelayedQueue
+	return b.config.DelayedQueue
 }
 
 func (b *AMQPBroker) getQueuePrefetchCount() int {
-	return b.config.AMQP.PrefetchCount
+	return b.config.PrefetchCount
 }
 
 func (b *AMQPBroker) getDelayedQueueDLX() string {
-	return b.config.AMQP.Exchange
+	return b.config.Exchange
 }
 
 func (b *AMQPBroker) getExchangeName() string {
-	return b.config.AMQP.Exchange
+	return b.config.Exchange
 }
 
 func (b *AMQPBroker) getExchangeType() string {
-	return b.config.AMQP.ExchangeType
+	return b.config.ExchangeType
 }
 
 func (b *AMQPBroker) getTaskQueue() string {
-	return b.config.TaskQueueName
+	return b.queueName
 }
 
 func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {

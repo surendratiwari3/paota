@@ -11,24 +11,24 @@ import (
 )
 
 type IFactory interface {
-	CreateBroker() (broker.Broker, error)
+	CreateBroker(broker string) (broker.Broker, error)
 	CreateStore() error
-	CreateTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface
+	CreateTaskRegistrar(brk broker.Broker, brkFailover broker.Broker) task.TaskRegistrarInterface
 }
 
 type Factory struct{}
 
 // NewAMQPBroker creates a new instance of AMQPBroker
-func (bf *Factory) NewAMQPBroker() (broker.Broker, error) {
-	return amqpBroker.NewAMQPBroker()
+func (bf *Factory) NewAMQPBroker(brokerType string) (broker.Broker, error) {
+	return amqpBroker.NewAMQPBroker(brokerType)
 }
 
 // CreateBroker creates a new object of broker.Broker
-func (bf *Factory) CreateBroker() (broker.Broker, error) {
+func (bf *Factory) CreateBroker(broker string) (broker.Broker, error) {
 	brokerType := config.GetConfigProvider().GetConfig().Broker
 	switch brokerType {
 	case "amqp":
-		return bf.NewAMQPBroker()
+		return bf.NewAMQPBroker(broker)
 	default:
 		logger.ApplicationLogger.Error("unsupported broker")
 		return nil, appErrors.ErrUnsupportedBroker
@@ -46,6 +46,6 @@ func (bf *Factory) CreateStore() error {
 	}
 }
 
-func (bf *Factory) CreateTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface {
-	return memory.NewDefaultTaskRegistrar(brk)
+func (bf *Factory) CreateTaskRegistrar(brk broker.Broker, brkFailover broker.Broker) task.TaskRegistrarInterface {
+	return memory.NewDefaultTaskRegistrar(brk, brkFailover)
 }

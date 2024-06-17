@@ -1,5 +1,3 @@
-// config.go
-
 package config
 
 import (
@@ -17,12 +15,14 @@ type ConfigProvider interface {
 
 // Config holds all configuration for Paota
 type Config struct {
-	Broker         string         `env:"BROKER" envDefault:"amqp" validate:"required,oneof=amqp"` //allowed amqp
-	Store          string         `env:"STORE"`
-	TaskQueueName  string         `env:"QUEUE_NAME" envDefault:"paota_tasks" validate:"required"`
-	StoreQueueName string         `env:"STORE_QUEUE_NAME"`
-	AMQP           *AMQPConfig    `envPrefix:"AMQP_"`
-	MongoDB        *MongoDBConfig `envPrefix:"MONGO_"`
+	Broker            string         `env:"BROKER" envDefault:"amqp" validate:"required,oneof=amqp"` //allowed amqp
+	Store             string         `env:"STORE"`
+	TaskQueueName     string         `env:"QUEUE_NAME" envDefault:"paota_tasks" validate:"required"`
+	StoreQueueName    string         `env:"STORE_QUEUE_NAME"`
+	AMQP              *AMQPConfig    `envPrefix:"AMQP_"`
+	FailoverQueueName string         `env:"FAILOVER_QUEUE_NAME_" envDefault:"paota_failover"`
+	AmqpFailover      *AMQPConfig    `envPrefix:"AMQP_FAILOVER_"`
+	MongoDB           *MongoDBConfig `envPrefix:"MONGO_"`
 }
 
 type configProvider struct {

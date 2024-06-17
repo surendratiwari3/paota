@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/internal/broker"
 	"github.com/surendratiwari3/paota/internal/task"
+
+	"sync"
+	"time"
 
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/utils"
@@ -15,20 +19,20 @@ import (
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
 	appError "github.com/surendratiwari3/paota/schema/errors"
-	"sync"
-	"time"
 )
 
 type DefaultTaskRegistrar struct {
 	registeredTasks      *sync.Map
 	registeredTasksCount uint
 	broker               broker.Broker
+	faileOverBroker      broker.Broker
 }
 
-func NewDefaultTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface {
+func NewDefaultTaskRegistrar(brk broker.Broker, brkFailover broker.Broker) task.TaskRegistrarInterface {
 	return &DefaultTaskRegistrar{
 		registeredTasks: new(sync.Map),
 		broker:          brk,
+		faileOverBroker: brkFailover,
 	}
 }
 
@@ -163,8 +167,20 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 		taskID := uuid.New().String()
 		signature.UUID = fmt.Sprintf("task_%v", taskID)
 	}
+
 	if err := r.broker.Publish(ctx, signature); err != nil {
-		return fmt.Errorf("Publish message error: %s", err)
+
+		logger.ApplicationLogger.Error("master raabitmq publish failed", err)
+		if r.faileOverBroker == nil {
+			logger.ApplicationLogger.Info("failover broker is nil")
+			return fmt.Errorf("master publish message error: %s", err)
+		}
+
+		logger.ApplicationLogger.Info("try publish to failover queue")
+		if err := r.faileOverBroker.Publish(ctx, signature); err != nil {
+			logger.ApplicationLogger.Error("failover raabitmq publish failed", err)
+			return fmt.Errorf("failover publish message error: %s", err)
+		}
 	}
 	return nil
 }

@@ -2,11 +2,12 @@ package provider
 
 import (
 	"context"
+	"sync"
+	"time"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/schema/errors"
-	"sync"
-	"time"
 )
 
 type AmqpProviderInterface interface {
