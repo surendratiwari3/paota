@@ -162,6 +162,7 @@ func (r *DefaultTaskRegistrar) SendTask(signature *schema.Signature) error {
 }
 
 func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signature *schema.Signature) error {
+	signatureRoutingKey := signature.RoutingKey
 	// Auto generate a UUID if not set already
 	if signature.UUID == "" {
 		taskID := uuid.New().String()
@@ -177,6 +178,7 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 		}
 
 		logger.ApplicationLogger.Info("try publish to failover queue")
+		signature.RoutingKey = signatureRoutingKey
 		if err := r.faileOverBroker.Publish(ctx, signature); err != nil {
 			logger.ApplicationLogger.Error("failover raabitmq publish failed", err)
 			return fmt.Errorf("failover publish message error: %s", err)
