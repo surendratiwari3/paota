@@ -2,7 +2,6 @@ package workerpool
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -13,6 +12,7 @@ import (
 	"github.com/surendratiwari3/paota/internal/task"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
+	"github.com/surendratiwari3/paota/schema/errors"
 
 	"os"
 	"os/signal"
@@ -55,7 +55,7 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 
 	cnf := config.GetConfigProvider().GetConfig()
 	if cnf == nil {
-		return nil, errors.New("config is not provided")
+		return nil, errors.ErrNilConfig
 	}
 
 	workerPoolId := uuid.New().String()
@@ -81,12 +81,17 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 	}
 	workerPool.broker = factoryBroker
 
-	failOverBroker, err := workerPool.factory.CreateBroker("failover")
-	if err != nil {
-		logger.ApplicationLogger.Error("failover  broker creation failed", err)
-		return nil, err
+	if cnf.AmqpFailover != nil {
+		if cnf.FailoverQueueName != "" {
+			return nil, errors.ErrInvalidConfig
+		}
+		failOverBroker, err := workerPool.factory.CreateBroker("failover")
+		if err != nil {
+			logger.ApplicationLogger.Error("failover  broker creation failed", err)
+			return nil, err
+		}
+		workerPool.failOverBroker = failOverBroker
 	}
-	workerPool.failOverBroker = failOverBroker
 
 	// Backend is optional so we ignore the error
 	err = workerPool.factory.CreateStore()
@@ -95,10 +100,10 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 		return nil, err
 	}
 
-	taskRegistrar := workerPool.factory.CreateTaskRegistrar(factoryBroker, failOverBroker)
+	taskRegistrar := workerPool.factory.CreateTaskRegistrar(workerPool.broker, workerPool.failOverBroker)
 	if taskRegistrar == nil {
 		logger.ApplicationLogger.Error("task registrar creation failed")
-		return nil, errors.New("failed to start the worker pool")
+		return nil, errors.ErrFailedToStartWorkerPool
 	}
 	workerPool.taskRegistrar = taskRegistrar
 
@@ -153,7 +158,7 @@ func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *schema
 func validateContextType(ctx interface{}) error {
 	ctxType := reflect.TypeOf(ctx)
 	if ctxType.Kind() != reflect.Struct {
-		return errors.New("work: Context needs to be a struct type")
+		return errors.ErrInvalidWorkerContext
 	}
 	return nil
 }
