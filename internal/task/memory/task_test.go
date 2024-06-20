@@ -2,16 +2,17 @@ package memory
 
 import (
 	"errors"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/surendratiwari3/paota/internal/broker"
 	"github.com/surendratiwari3/paota/schema"
-	"testing"
 )
 
 func TestTaskRegistrar_RegisterTasks(t *testing.T) {
-	mockBroker := broker.NewMockBroker(t)
-	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
+	mockBroker := broker.NewMockBroker(t, "master")
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker, nil)
 	// Create a mock task function
 	mockTaskFunc := func() error { return nil }
 	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
@@ -33,8 +34,8 @@ func TestTaskRegistrar_RegisterTasks(t *testing.T) {
 }
 
 func TestTaskRegistrar_IsTaskRegistered(t *testing.T) {
-	mockBroker := broker.NewMockBroker(t)
-	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
+	mockBroker := broker.NewMockBroker(t, "master")
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker, nil)
 	// Create a mock task function
 	mockTaskFunc := func() error { return nil }
 	namedTaskFuncs := map[string]interface{}{"taskName": mockTaskFunc}
@@ -47,8 +48,8 @@ func TestTaskRegistrar_IsTaskRegistered(t *testing.T) {
 }
 
 func TestTaskRegistrar_GetRegisteredTask(t *testing.T) {
-	mockBroker := broker.NewMockBroker(t)
-	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
+	mockBroker := broker.NewMockBroker(t, "master")
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker, nil)
 
 	// Create a mock task function
 	mockTaskFunc := func() error { return nil }
@@ -68,8 +69,8 @@ func TestTaskRegistrar_GetRegisteredTask(t *testing.T) {
 }
 
 func TestTaskRegistrar_SendTaskWithContext(t *testing.T) {
-	mockBroker := broker.NewMockBroker(t)
-	taskRegistrar := NewDefaultTaskRegistrar(mockBroker)
+	mockBroker := broker.NewMockBroker(t, "master")
+	taskRegistrar := NewDefaultTaskRegistrar(mockBroker, nil)
 	mockBroker.On("Publish", mock.Anything, mock.Anything).Return(nil)
 	// Create a mock task signature
 	mockSignature := &schema.Signature{
@@ -78,8 +79,8 @@ func TestTaskRegistrar_SendTaskWithContext(t *testing.T) {
 	err := taskRegistrar.SendTask(mockSignature)
 	assert.Nil(t, err)
 
-	mockBroker = broker.NewMockBroker(t)
-	taskRegistrar = NewDefaultTaskRegistrar(mockBroker)
+	mockBroker = broker.NewMockBroker(t, "master")
+	taskRegistrar = NewDefaultTaskRegistrar(mockBroker, nil)
 	mockBroker.On("Publish", mock.Anything, mock.Anything).Return(errors.New("test error"))
 	err = taskRegistrar.SendTask(mockSignature)
 	assert.NotNil(t, err)
