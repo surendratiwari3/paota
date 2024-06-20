@@ -1,13 +1,14 @@
 package amqp
 
 import (
+	"testing"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/provider"
-	"testing"
 )
 
 func TestNewAMQPBroker(t *testing.T) {
@@ -48,7 +49,7 @@ func TestNewAMQPBroker(t *testing.T) {
 	globalAmqpProvider = mockAmqpProvider
 
 	// Create a new instance of AMQPBroker
-	broker, err := NewAMQPBroker()
+	broker, err := NewAMQPBroker("master")
 
 	// Perform assertions as needed
 	assert.Nil(t, err)
@@ -72,7 +73,7 @@ func TestAMQPBrokerGetRoutingKey(t *testing.T) {
 	}
 
 	broker := &AMQPBroker{
-		config: cfg,
+		config: cfg.AMQP,
 	}
 
 	require.Equal(t, "test_queue", broker.getTaskQueue(), "TaskQueueName should match")
@@ -92,7 +93,7 @@ func TestIsDirectExchange(t *testing.T) {
 		},
 	}
 	amqpBroker := &AMQPBroker{
-		config: cfg,
+		config: cfg.AMQP,
 	}
 
 	// Check if the exchange type is direct
@@ -108,7 +109,7 @@ func TestIsDirectExchange(t *testing.T) {
 		},
 	}
 	amqpBrokerNonDirect := &AMQPBroker{
-		config: cfgNonDirect,
+		config: cfgNonDirect.AMQP,
 	}
 
 	// Check if the exchange type is not direct
