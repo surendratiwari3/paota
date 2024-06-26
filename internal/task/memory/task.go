@@ -181,7 +181,7 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 		signature.RoutingKey = signatureRoutingKey
 		if err := r.faileOverBroker.Publish(ctx, signature); err != nil {
 			logger.ApplicationLogger.Error("failover raabitmq publish failed", err)
-			return fmt.Errorf("failover publish message error: %s", err)
+			panic(err)
 		}
 	}
 	return nil
