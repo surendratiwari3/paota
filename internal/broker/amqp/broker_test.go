@@ -17,12 +17,21 @@ func TestNewAMQPBroker(t *testing.T) {
 	mockConfigProvider := new(config.MockConfigProvider)
 
 	conf := &config.Config{
-		Broker:        "amqp",
-		TaskQueueName: "test",
+		Broker:            "amqp",
+		TaskQueueName:     "test",
+		FailoverQueueName: "failover_queue",
 		AMQP: &config.AMQPConfig{
 			Exchange:           "amqp",
 			ExchangeType:       "direct",
 			Url:                "amqp://localhost:5672",
+			HeartBeatInterval:  30,
+			ConnectionPoolSize: 2,
+			DelayedQueue:       "test",
+		},
+		AmqpFailover: &config.AMQPConfig{
+			Exchange:           "amqp",
+			ExchangeType:       "direct",
+			Url:                "amqp://localhost:5673",
 			HeartBeatInterval:  30,
 			ConnectionPoolSize: 2,
 			DelayedQueue:       "test",
@@ -54,6 +63,7 @@ func TestNewAMQPBroker(t *testing.T) {
 	// Perform assertions as needed
 	assert.Nil(t, err)
 	assert.NotNil(t, broker)
+	assert.Equal(t, "test", broker.(*AMQPBroker).queueName)
 }
 
 func TestAMQPBrokerGetRoutingKey(t *testing.T) {
