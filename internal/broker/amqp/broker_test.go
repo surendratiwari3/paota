@@ -76,6 +76,8 @@ func TestAMQPBrokerGetRoutingKey(t *testing.T) {
 		config: cfg.AMQP,
 	}
 
+	broker.queueName = cfg.TaskQueueName
+
 	require.Equal(t, "test_queue", broker.getTaskQueue(), "TaskQueueName should match")
 	require.Equal(t, "test_queue", broker.getRoutingKey(), "Routing key should match the direct exchange binding key")
 	require.Equal(t, "fanout", broker.getExchangeType(), "exchange name key should match")
