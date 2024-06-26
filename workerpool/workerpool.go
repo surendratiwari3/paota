@@ -2,7 +2,6 @@ package workerpool
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/surendratiwari3/paota/config"
@@ -149,7 +148,7 @@ func (wp *WorkerPool) SetBackend(backend store.Backend) {
 // SendTaskWithContext will inject the trace context in the signature headers before publishing it
 func (wp *WorkerPool) SendTaskWithContext(ctx context.Context, signature *schema.Signature) (*schema.State, error) {
 	if err := wp.taskRegistrar.SendTaskWithContext(ctx, signature); err != nil {
-		return nil, fmt.Errorf("publish message error: %s", err)
+		wp.Stop()
 	}
 	return schema.NewPendingTaskState(signature), nil
 }
