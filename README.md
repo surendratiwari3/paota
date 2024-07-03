@@ -45,6 +45,15 @@ Paota is designed to provide high availability and support horizontal scaling. B
 
 In summary, Paota facilitates the asynchronous processing of tasks in a distributed environment, allowing for efficient utilization of resources, high availability, and horizontal scaling. It is a versatile tool for building scalable and responsive systems that can handle background and asynchronous workloads.
 
+### 9. Publisher with Failover Functionality
+
+Paota allows you to publish messages to RabbitMQ with high availability by introducing failover functionality. If a task fails to publish to the main RabbitMQ server, it will automatically try to publish to the next configured RabbitMQ server, ensuring message delivery even if the primary server is down.
+
+#### Features
+- **High Availability**: Automatic failover to secondary RabbitMQ servers if the primary server is unavailable.
+- **Configurable Failover**: Easily configure RabbitMQ servers for failover.
+- **Seamless Integration**: Integrates with existing RabbitMQ setups with minimal changes.
+
 ## Quest for Completion
 
 ### In Progress
@@ -104,8 +113,10 @@ The `Config` struct holds all configuration options for Paota. It includes the f
 - **Broker**: The message broker to be used. Currently, only "amqp" is supported.
 - **Store**: The type of storage to be used (optional).
 - **TaskQueueName**: The name of the task queue. Default value is "paota_tasks".
+- **FailoverQueueName**: The name of the failover task queue, Default value is "paota_failover" (optional)
 - **StoreQueueName**: The name of the storage queue (optional).
 - **AMQP**: Configuration for the AMQP (RabbitMQ) connection. See [AMQP Configuration](#amqp-configuration) for details.
+- **AmqpFailover**: Configuration for the secondary AMQP (RabbitMQ) connection for the failover. See [AMQP Configuration](#amqp-configuration) for details. (optional)
 
 Here's an example of how you can set up the main configuration using environment variables:
 
