@@ -166,10 +166,10 @@ The `Signature` struct represents a single task invocation and has the following
 - `Args`: List of arguments for the task, where each `Arg` has the following structure:
     - `Name`: Name of the argument.
     - `Value`: Value of the argument.
-- `RoutingKey`: Routing key for the task.
+- `RoutingKey`: Directs a task to the correct queue. If left empty, it defaults to the queue's binding key for direct exchanges, or the queue name for other exchange types.
 - `Priority`: Priority of the task.
-- `RetryCount`: Number of times the task can be retried.
-- `RetryTimeout`: Timeout duration for retrying the task.
+- `RetryCount`: Defines how many times a failed task will be retried (default is 0). Each retry will be spaced out, with the delay increasing after each failure.
+- `RetryTimeout`: Sets the wait time before retrying a task. By default, it increases the wait time after each failed attempt using the Fibonacci sequence.
 - `IgnoreWhenTaskNotRegistered`: Flag to indicate whether to ignore the task when not registered.
 
 ### Task Function Format
