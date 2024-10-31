@@ -23,12 +23,14 @@ type DefaultTaskRegistrar struct {
 	registeredTasks      *sync.Map
 	registeredTasksCount uint
 	broker               broker.Broker
+	configProvider       config.ConfigProvider
 }
 
-func NewDefaultTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface {
+func NewDefaultTaskRegistrar(brk broker.Broker, configProvider config.ConfigProvider) task.TaskRegistrarInterface {
 	return &DefaultTaskRegistrar{
 		registeredTasks: new(sync.Map),
 		broker:          brk,
+		configProvider:  configProvider,
 	}
 }
 
@@ -142,7 +144,7 @@ func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
 	}
 	retryInterval := r.getRetryInterval(signature.RetriesDone)
 	if retryInterval > 0 {
-		signature.RoutingKey = config.GetConfigProvider().GetConfig().AMQP.DelayedQueue
+		signature.RoutingKey = r.configProvider.GetConfig().AMQP.DelayedQueue
 	}
 	eta := time.Now().UTC().Add(retryInterval)
 	signature.ETA = &eta

@@ -64,8 +64,8 @@ func (b *AMQPBroker) isDirectExchange() bool {
 // NewAMQPBroker creates a new instance of the AMQP broker
 // It opens connections to RabbitMQ, declares an exchange, opens a channel,
 // declares and binds the queue, and enables publish notifications
-func NewAMQPBroker() (broker.Broker, error) {
-	cfg := config.GetConfigProvider().GetConfig()
+func NewAMQPBroker(configProvider config.ConfigProvider) (broker.Broker, error) {
+	cfg := configProvider.GetConfig()
 	amqpErrorChannel := make(chan *amqp.Error, 1)
 	stopChannel := make(chan struct{})
 	doneStopChannel := make(chan struct{})

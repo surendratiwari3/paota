@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/internal/backend"
 	"github.com/surendratiwari3/paota/internal/broker"
 	"github.com/surendratiwari3/paota/internal/factory"
-	"github.com/surendratiwari3/paota/internal/store"
 	"github.com/surendratiwari3/paota/internal/task"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
@@ -23,17 +23,18 @@ import (
 
 // WorkerPool stores all configuration for tasks workers
 type WorkerPool struct {
-	backend       store.Backend
-	broker        broker.Broker
-	factory       factory.IFactory
-	config        *config.Config
-	taskRegistrar task.TaskRegistrarInterface
-	started       bool
-	workerPoolID  string
-	concurrency   uint
-	nameSpace     string
-	contextType   reflect.Type
-	workerGroup   workergroup.WorkerGroupInterface
+	backend        backend.Backend
+	broker         broker.Broker
+	factory        factory.IFactory
+	config         *config.Config
+	taskRegistrar  task.TaskRegistrarInterface
+	started        bool
+	workerPoolID   string
+	concurrency    uint
+	nameSpace      string
+	contextType    reflect.Type
+	workerGroup    workergroup.WorkerGroupInterface
+	configProvider config.ConfigProvider
 }
 
 // globalFactory defined just for unit test cases
@@ -46,32 +47,37 @@ type WorkerPoolOptions struct {
 
 // NewWorkerPool creates WorkerPool instance
 func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, error) {
+	cnfProvider := config.GetConfigProvider()
+	if cnfProvider == nil {
+		return nil, errors.New("config is not provided")
+	}
+	return createWorkerPool(ctx, concurrency, nameSpace, cnfProvider)
+}
+
+func createWorkerPool(ctx interface{}, concurrency uint, nameSpace string, configProvider config.ConfigProvider) (Pool, error) {
+
 	if err := validateContextType(ctx); err != nil {
 		return nil, err
-	}
-
-	cnf := config.GetConfigProvider().GetConfig()
-	if cnf == nil {
-		return nil, errors.New("config is not provided")
 	}
 
 	workerPoolId := uuid.New().String()
 
 	workerPool := &WorkerPool{
-		concurrency:  concurrency,
-		config:       cnf,
-		contextType:  reflect.TypeOf(ctx),
-		nameSpace:    nameSpace,
-		started:      false,
-		workerPoolID: workerPoolId,
-		factory:      globalFactory,
+		concurrency:    concurrency,
+		config:         configProvider.GetConfig(),
+		contextType:    reflect.TypeOf(ctx),
+		nameSpace:      nameSpace,
+		started:        false,
+		workerPoolID:   workerPoolId,
+		factory:        globalFactory,
+		configProvider: configProvider,
 	}
 
 	if workerPool.factory == nil {
 		workerPool.factory = &factory.Factory{}
 	}
 
-	factoryBroker, err := workerPool.factory.CreateBroker()
+	factoryBroker, err := workerPool.factory.CreateBroker(configProvider)
 	if err != nil {
 		logger.ApplicationLogger.Error("broker creation failed", err)
 		return nil, err
@@ -79,13 +85,13 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 	workerPool.broker = factoryBroker
 
 	// Backend is optional so we ignore the error
-	err = workerPool.factory.CreateStore()
+	err = workerPool.factory.CreateStore(configProvider)
 	if err != nil {
 		logger.ApplicationLogger.Error("store creation failed", err)
 		return nil, err
 	}
 
-	taskRegistrar := workerPool.factory.CreateTaskRegistrar(factoryBroker)
+	taskRegistrar := workerPool.factory.CreateTaskRegistrar(factoryBroker, configProvider)
 	if taskRegistrar == nil {
 		logger.ApplicationLogger.Error("task registrar creation failed")
 		return nil, errors.New("failed to start the worker pool")
@@ -98,12 +104,13 @@ func NewWorkerPool(ctx interface{}, concurrency uint, nameSpace string) (Pool, e
 }
 
 func NewWorkerPoolWithConfig(ctx interface{}, concurrency uint, nameSpace string, conf config.Config) (Pool, error) {
-	err := config.GetConfigProvider().SetApplicationConfig(conf)
+	configProvider := config.NewConfigProvider()
+	err := configProvider.SetApplicationConfig(conf)
 	if err != nil {
 		logger.ApplicationLogger.Error("config error", err)
 		return nil, err
 	}
-	return NewWorkerPool(ctx, concurrency, nameSpace)
+	return createWorkerPool(ctx, concurrency, nameSpace, configProvider)
 }
 
 // NewWorkerPoolWithOptions : TODO future with options
@@ -122,12 +129,12 @@ func (wp *WorkerPool) SetBroker(broker broker.Broker) {
 }
 
 // GetBackend returns backend
-func (wp *WorkerPool) GetBackend() store.Backend {
+func (wp *WorkerPool) GetBackend() backend.Backend {
 	return wp.backend
 }
 
 // SetBackend sets backend
-func (wp *WorkerPool) SetBackend(backend store.Backend) {
+func (wp *WorkerPool) SetBackend(backend backend.Backend) {
 	wp.backend = backend
 }
 

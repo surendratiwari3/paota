@@ -7,6 +7,8 @@ import (
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/workerpool"
+	"sync"
+
 	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
 	"os"
@@ -31,19 +33,14 @@ func main() {
 			Url:                "amqp://guest:guest@localhost:5672/",
 			Exchange:           "paota_task_exchange",
 			ExchangeType:       "direct",
-			BindingKey:         "paota_task_binding_key",
+			BindingKey:         "consumer_publisher",
 			PrefetchCount:      100,
 			ConnectionPoolSize: 10,
-			DelayedQueue:       "delay_test",
+			DelayedQueue:       "delay_consumer_publisher",
 		},
 	}
-	err := config.GetConfigProvider().SetApplicationConfig(cnf)
-	if err != nil {
-		logger.ApplicationLogger.Error("config error", err)
-		return
-	}
 
-	newWorkerPool, err := workerpool.NewWorkerPool(context.Background(), 10, "testWorker")
+	newWorkerPool, err := workerpool.NewWorkerPoolWithConfig(context.Background(), 10, "testWorker", cnf)
 	if err != nil {
 		logger.ApplicationLogger.Error("workerPool is not created", err)
 		os.Exit(0)
@@ -102,11 +99,21 @@ func (wp printWorker) Publish() {
 			},
 		},
 		RetryCount:                  10,
-		RoutingKey:                  "consumer_publisher",
+		RoutingKey:                  "consumer_publisher_",
 		IgnoreWhenTaskNotRegistered: true,
 	}
 
-	wp.workerPool.SendTaskWithContext(context.Background(), printJob)
+	waitGrp := sync.WaitGroup{}
+	waitGrp.Add(1)
+		go func() {
+			for i := 0; i < 100; i++ {
+				wp.workerPool.SendTaskWithContext(context.Background(), printJob)
+			}
+			waitGrp.Done()
+		}()
+	}
+
+	waitGrp.Wait()
 
 }
 
