@@ -11,24 +11,24 @@ import (
 )
 
 type IFactory interface {
-	CreateBroker() (broker.Broker, error)
-	CreateStore() error
-	CreateTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface
+	CreateBroker(configProvider config.ConfigProvider) (broker.Broker, error)
+	CreateStore(configProvider config.ConfigProvider) error
+	CreateTaskRegistrar(brk broker.Broker, configProvider config.ConfigProvider) task.TaskRegistrarInterface
 }
 
 type Factory struct{}
 
 // NewAMQPBroker creates a new instance of AMQPBroker
-func (bf *Factory) NewAMQPBroker() (broker.Broker, error) {
-	return amqpBroker.NewAMQPBroker()
+func (bf *Factory) NewAMQPBroker(configProvider config.ConfigProvider) (broker.Broker, error) {
+	return amqpBroker.NewAMQPBroker(configProvider)
 }
 
 // CreateBroker creates a new object of broker.Broker
-func (bf *Factory) CreateBroker() (broker.Broker, error) {
-	brokerType := config.GetConfigProvider().GetConfig().Broker
+func (bf *Factory) CreateBroker(configProvider config.ConfigProvider) (broker.Broker, error) {
+	brokerType := configProvider.GetConfig().Broker
 	switch brokerType {
 	case "amqp":
-		return bf.NewAMQPBroker()
+		return bf.NewAMQPBroker(configProvider)
 	default:
 		logger.ApplicationLogger.Error("unsupported broker")
 		return nil, appErrors.ErrUnsupportedBroker
@@ -36,8 +36,8 @@ func (bf *Factory) CreateBroker() (broker.Broker, error) {
 }
 
 // CreateStore creates a new object of store.Interface
-func (bf *Factory) CreateStore() error {
-	storeBackend := config.GetConfigProvider().GetConfig().Store
+func (bf *Factory) CreateStore(configProvider config.ConfigProvider) error {
+	storeBackend := configProvider.GetConfig().Store
 	switch storeBackend {
 	case "":
 		return nil
@@ -46,6 +46,6 @@ func (bf *Factory) CreateStore() error {
 	}
 }
 
-func (bf *Factory) CreateTaskRegistrar(brk broker.Broker) task.TaskRegistrarInterface {
-	return memory.NewDefaultTaskRegistrar(brk)
+func (bf *Factory) CreateTaskRegistrar(brk broker.Broker, configProvider config.ConfigProvider) task.TaskRegistrarInterface {
+	return memory.NewDefaultTaskRegistrar(brk, configProvider)
 }

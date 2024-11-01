@@ -1,4 +1,4 @@
-package store
+package backend
 
 import (
 	"github.com/surendratiwari3/paota/schema"
@@ -6,8 +6,8 @@ import (
 
 // Backend - a common interface for all result Store
 type Backend interface {
-	// InsertTask Insert task state to result backend
-	InsertTask(signature schema.Signature) error
+	// StoreTask Insert task state to result backend
+	StoreTask(signature schema.Signature) error
 	// DeleteTask Delete task state from result backend
 	DeleteTask(taskId string) error
 	// GetTask Get task state from result backend

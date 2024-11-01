@@ -36,9 +36,9 @@ func TestNewWorkerPool(t *testing.T) {
 	mockTaskRegistrar := task.NewMockTaskRegistrarInterface(t)
 
 	mockFactory := new(factory.MockIFactory)
-	mockFactory.On("CreateBroker").Return(mockBroker, nil)
-	mockFactory.On("CreateStore").Return(nil)
-	mockFactory.On("CreateTaskRegistrar", mock.Anything).Return(mockTaskRegistrar)
+	mockFactory.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
+	mockFactory.On("CreateStore", mock.Anything).Return(nil)
+	mockFactory.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskRegistrar)
 
 	globalFactory = mockFactory
 
@@ -62,9 +62,9 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 	mockTaskRegistrar.On("SendTaskWithContext", mock.Anything, mock.Anything).Return(nil)
 
 	mockFactory := new(factory.MockIFactory)
-	mockFactory.On("CreateBroker").Return(mockBroker, nil)
-	mockFactory.On("CreateStore").Return(nil)
-	mockFactory.On("CreateTaskRegistrar", mock.Anything).Return(mockTaskRegistrar)
+	mockFactory.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
+	mockFactory.On("CreateStore", mock.Anything).Return(nil)
+	mockFactory.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskRegistrar)
 
 	globalFactory = mockFactory
 
@@ -100,9 +100,9 @@ func TestWorkerPool_Start(t *testing.T) {
 	mockTaskReg.On("GetRegisteredTaskCount").Return(uint(10))
 
 	mockFactory := new(factory.MockIFactory)
-	mockFactory.On("CreateBroker").Return(mockBroker, nil)
-	mockFactory.On("CreateStore").Return(nil)
-	mockFactory.On("CreateTaskRegistrar", mock.Anything).Return(mockTaskReg)
+	mockFactory.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
+	mockFactory.On("CreateStore", mock.Anything).Return(nil)
+	mockFactory.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskReg)
 
 	globalFactory = mockFactory
 
