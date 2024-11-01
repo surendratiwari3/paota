@@ -48,7 +48,7 @@ func TestNewAMQPBroker(t *testing.T) {
 	globalAmqpProvider = mockAmqpProvider
 
 	// Create a new instance of AMQPBroker
-	broker, err := NewAMQPBroker()
+	broker, err := NewAMQPBroker(mockConfigProvider)
 
 	// Perform assertions as needed
 	assert.Nil(t, err)

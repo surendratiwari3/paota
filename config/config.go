@@ -79,6 +79,12 @@ func (cp *configProvider) GetConfig() *Config {
 	return &cp.applicationConfig
 }
 
+// SetConfigProvider sets the global configuration provider.
+// This is useful for injecting custom configurations during tests.
+func SetConfigProvider(provider ConfigProvider) {
+	globalConfigProvider = provider
+}
+
 // GetConfigProvider returns the global configuration provider.
 func GetConfigProvider() ConfigProvider {
 	if globalConfigProvider == nil {

@@ -105,16 +105,13 @@ func (wp printWorker) Publish() {
 
 	waitGrp := sync.WaitGroup{}
 	waitGrp.Add(1)
-		go func() {
-			for i := 0; i < 100; i++ {
-				wp.workerPool.SendTaskWithContext(context.Background(), printJob)
-			}
-			waitGrp.Done()
-		}()
-	}
-
+	go func() {
+		for i := 0; i < 100; i++ {
+			wp.workerPool.SendTaskWithContext(context.Background(), printJob)
+		}
+		waitGrp.Done()
+	}()
 	waitGrp.Wait()
-
 }
 
 func (wp printWorker) Print(arg *schema.Signature) error {
