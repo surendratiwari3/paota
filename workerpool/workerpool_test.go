@@ -35,12 +35,12 @@ func TestNewWorkerPool(t *testing.T) {
 	mockBroker := broker.NewMockBroker(t)
 	mockTaskRegistrar := task.NewMockTaskRegistrarInterface(t)
 
-	mockFactory := new(factory.MockIFactory)
-	mockFactory.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
-	mockFactory.On("CreateStore", mock.Anything).Return(nil)
-	mockFactory.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskRegistrar)
+	mockFactoryNewWrkPool := new(factory.MockIFactory)
+	mockFactoryNewWrkPool.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
+	mockFactoryNewWrkPool.On("CreateStore", mock.Anything).Return(nil)
+	mockFactoryNewWrkPool.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskRegistrar)
 
-	globalFactory = mockFactory
+	globalFactory = mockFactoryNewWrkPool
 
 	pool, err := NewWorkerPool(context.Background(), 10, "test")
 	if err != nil {
@@ -61,12 +61,12 @@ func TestWorkerPool_SendTaskWithContext(t *testing.T) {
 	mockTaskRegistrar := task.NewMockTaskRegistrarInterface(t)
 	mockTaskRegistrar.On("SendTaskWithContext", mock.Anything, mock.Anything).Return(nil)
 
-	mockFactory := new(factory.MockIFactory)
-	mockFactory.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
-	mockFactory.On("CreateStore", mock.Anything).Return(nil)
-	mockFactory.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskRegistrar)
+	mockFactorySendTask := new(factory.MockIFactory)
+	mockFactorySendTask.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
+	mockFactorySendTask.On("CreateStore", mock.Anything).Return(nil)
+	mockFactorySendTask.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskRegistrar)
 
-	globalFactory = mockFactory
+	globalFactory = mockFactorySendTask
 
 	pool, err := NewWorkerPool(context.Background(), 10, "test")
 	if err != nil {
@@ -99,12 +99,12 @@ func TestWorkerPool_Start(t *testing.T) {
 	mockTaskReg := task.NewMockTaskRegistrarInterface(t)
 	mockTaskReg.On("GetRegisteredTaskCount").Return(uint(10))
 
-	mockFactory := new(factory.MockIFactory)
-	mockFactory.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
-	mockFactory.On("CreateStore", mock.Anything).Return(nil)
-	mockFactory.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskReg)
+	mockFactoryStart := new(factory.MockIFactory)
+	mockFactoryStart.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
+	mockFactoryStart.On("CreateStore", mock.Anything).Return(nil)
+	mockFactoryStart.On("CreateTaskRegistrar", mock.Anything, mock.Anything).Return(mockTaskReg)
 
-	globalFactory = mockFactory
+	globalFactory = mockFactoryStart
 
 	wp, err := NewWorkerPool(context.Background(), 10, "test")
 	if err != nil {
