@@ -39,7 +39,7 @@ func main() {
 	}
 	err := config.GetConfigProvider().SetApplicationConfig(cnf)
 	if err != nil {
-		logger.ApplicationLogger.Error("config error", err)
+		logger.ApplicationLogger.Error("config error, exit", err)
 		return
 	}
 
