@@ -1,9 +1,10 @@
 package workergroup
 
 import (
+	"sync"
+
 	"github.com/surendratiwari3/paota/internal/task"
 	"github.com/surendratiwari3/paota/logger"
-	"sync"
 )
 
 type WorkerGroupInterface interface {
