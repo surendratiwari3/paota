@@ -35,7 +35,7 @@ func (m *MockRedisConn) DoWithTimeout(timeout time.Duration, commandName string,
 	callArgs[0] = timeout
 	callArgs[1] = commandName
 	copy(callArgs[2:], args)
-	
+
 	methodArgs := m.Called(callArgs...)
 	return methodArgs.Get(0), methodArgs.Error(1)
 }
@@ -44,7 +44,7 @@ func (m *MockRedisConn) Do(commandName string, args ...interface{}) (interface{}
 	callArgs := make([]interface{}, 1+len(args))
 	callArgs[0] = commandName
 	copy(callArgs[1:], args)
-	
+
 	methodArgs := m.Called(callArgs...)
 	return methodArgs.Get(0), methodArgs.Error(1)
 }
@@ -70,31 +70,31 @@ func (m *MockRedisPool) Close() error {
 
 func TestPublish(t *testing.T) {
 	testCases := []struct {
-		name           string
-		mockSetup      func(*MockRedisPool, *MockRedisConn)
-		message        *schema.Signature
-		queue          string
-		expectedError  bool
-		errorMessage   string
+		name          string
+		mockSetup     func(*MockRedisPool, *MockRedisConn)
+		message       *schema.Signature
+		queue         string
+		expectedError bool
+		errorMessage  string
 	}{
 		{
 			name: "Successful Publish",
 			mockSetup: func(pool *MockRedisPool, conn *MockRedisConn) {
 				// Setup pool to return mock connection
 				pool.On("Get").Return(conn)
-				
+
 				// Setup connection to expect Close() call
 				conn.On("Close").Return(nil)
-				
+
 				// Prepare payload for LPUSH
 				signature := &schema.Signature{Name: "test_task"}
 				payload, _ := json.Marshal(signature)
-				
+
 				// Expect DoWithTimeout method with correct arguments
-				conn.On("DoWithTimeout", 
-					mock.Anything,  // timeout duration 
-					"LPUSH", 
-					"test_queue", 
+				conn.On("DoWithTimeout",
+					mock.Anything, // timeout duration
+					"LPUSH",
+					"test_queue",
 					payload,
 				).Return(1, nil)
 			},
@@ -108,22 +108,22 @@ func TestPublish(t *testing.T) {
 				// Simulate nil connection
 				pool.On("Get").Return(nil)
 			},
-			message:        &schema.Signature{Name: "test_task"},
-			queue:          "test_queue",
-			expectedError:  true,
-			errorMessage:   "failed to get connection from pool",
+			message:       &schema.Signature{Name: "test_task"},
+			queue:         "test_queue",
+			expectedError: true,
+			errorMessage:  "failed to get connection from pool",
 		},
 		{
 			name: "JSON Marshaling Error",
 			mockSetup: func(pool *MockRedisPool, conn *MockRedisConn) {
 				// Setup pool to return mock connection
 				pool.On("Get").Return(conn)
-				
+
 				// Setup connection to expect Close() call
 				conn.On("Close").Return(nil)
 			},
-			queue:          "test_queue",
-			expectedError:  true,
+			queue:         "test_queue",
+			expectedError: true,
 		},
 	}
 
@@ -203,12 +203,12 @@ func TestNewRedisProvider(t *testing.T) {
 
 func TestSubscribe(t *testing.T) {
 	testCases := []struct {
-		name           string
-		setupMocks     func(*MockRedisPool, *MockRedisConn)
-		queue          string
-		handler        func(*schema.Signature) error
-		expectedError  bool
-		errorContains  string
+		name          string
+		setupMocks    func(*MockRedisPool, *MockRedisConn)
+		queue         string
+		handler       func(*schema.Signature) error
+		expectedError bool
+		errorContains string
 	}{
 		{
 			name: "Empty Queue Name",
@@ -280,20 +280,4 @@ func TestSubscribe(t *testing.T) {
 			mockConn.AssertExpectations(t)
 		})
 	}
-}
-
-
-// MockRedisClient simulates the RedisClient interface
-type MockRedisClient struct {
-    mock.Mock
-}
-
-func (m *MockRedisClient) BRPop(timeout int, key string) ([]string, error) {
-    args := m.Called(timeout, key)
-    return args.Get(0).([]string), args.Error(1)
-}
-
-func (m *MockRedisClient) Close() error {
-    args := m.Called()
-    return args.Error(0)
 }

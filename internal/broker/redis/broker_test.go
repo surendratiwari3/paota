@@ -2,14 +2,14 @@ package redis
 
 import (
 	"context"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/surendratiwari3/paota/config"
-	//"github.com/surendratiwari3/paota/internal/provider"
 	"github.com/surendratiwari3/paota/internal/workergroup"
 	"github.com/surendratiwari3/paota/schema"
-	"testing"
 )
 
 // MockRedisProviderInterface is a mock implementation of the RedisProviderInterface.
@@ -94,11 +94,6 @@ func TestRedisBrokerStartConsumer(t *testing.T) {
 	signature := &schema.Signature{
 		Name: "TestTask",
 	}
-
-	// handler := func(sig *schema.Signature) error {
-	// 	mockWorkerGroup.AssignJob(sig)
-	// 	return nil
-	// }
 
 	mockProvider.On("Subscribe", queue, mock.Anything).Run(func(args mock.Arguments) {
 		// Simulate calling the handler

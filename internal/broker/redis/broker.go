@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/broker"
 	"github.com/surendratiwari3/paota/internal/provider"
@@ -29,18 +30,15 @@ func (rb *RedisBroker) Publish(ctx context.Context, signature *schema.Signature)
 
 func (rb *RedisBroker) StartConsumer(ctx context.Context, workerGroup workergroup.WorkerGroupInterface) error {
 	return rb.provider.Subscribe(rb.queue, func(signature *schema.Signature) error {
-		// Use AssignJob to pass the task to the worker group
 		workerGroup.AssignJob(signature)
-		return nil // Handle processing errors here if necessary
+		return nil
 	})
 }
-
-
 
 func (rb *RedisBroker) StopConsumer() {
 	_ = rb.provider.CloseConnection()
 }
 
 func (rb *RedisBroker) BrokerType() string {
-    return "redis"  // Return "redis" to indicate it's a Redis broker
+	return "redis" // Return "redis" to indicate it's a Redis broker
 }

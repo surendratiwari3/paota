@@ -83,22 +83,21 @@ func (r *DefaultTaskRegistrar) GetRegisteredTaskCount() uint {
 }
 
 func (r *DefaultTaskRegistrar) Processor(job interface{}) error {
-    logger.ApplicationLogger.Info("Received job of type", "type", fmt.Sprintf("%T", job))
+	logger.ApplicationLogger.Info("Received job of type", "type", fmt.Sprintf("%T", job))
 
-    // Perform a type switch to handle different job types
-    switch j := job.(type) {
-    case amqp.Delivery:
-        return r.amqpMsgProcessor(j) // Pass the job as amqp.Delivery
-    case *schema.Signature:
-        // Perform a type assertion to ensure job is of type *schema.Signature
-        return r.redisMsgProcessor(j) // Use j directly since it's already asserted
-    default:
-        // Handle other job types or report an error
-        logger.ApplicationLogger.Error("Unsupported job type", "type", fmt.Sprintf("%T", j), "job", j)
-    }
-    return nil
+	// Perform a type switch to handle different job types
+	switch j := job.(type) {
+	case amqp.Delivery:
+		return r.amqpMsgProcessor(j) // Pass the job as amqp.Delivery
+	case *schema.Signature:
+		// Perform a type assertion to ensure job is of type *schema.Signature
+		return r.redisMsgProcessor(j) // Use j directly since it's already asserted
+	default:
+		// Handle other job types or report an error
+		logger.ApplicationLogger.Error("Unsupported job type", "type", fmt.Sprintf("%T", j), "job", j)
+	}
+	return nil
 }
-
 
 func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
 	multiple := false
@@ -186,18 +185,6 @@ func (r *DefaultTaskRegistrar) SendTask(signature *schema.Signature) error {
 	return r.SendTaskWithContext(context.Background(), signature)
 }
 
-// func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signature *schema.Signature) error {
-// 	// Auto generate a UUID if not set already
-// 	if signature.UUID == "" {
-// 		taskID := uuid.New().String()
-// 		signature.UUID = fmt.Sprintf("task_%v", taskID)
-// 	}
-// 	if err := r.broker.Publish(ctx, signature); err != nil {
-// 		return fmt.Errorf("Publish message error: %s", err)
-// 	}
-// 	return nil
-// }
-
 func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signature *schema.Signature) error {
 	// Auto generate a UUID if not set already
 	if signature.UUID == "" {
@@ -210,7 +197,7 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 	case "rabbitmq":
 		// If the broker is RabbitMQ, publish to the message queue
 		if err := r.broker.Publish(ctx, signature); err != nil {
-			return fmt.Errorf("Publish message to RabbitMQ error: %s", err)
+			return fmt.Errorf("publish message to RabbitMQ error: %s", err)
 		}
 		logger.ApplicationLogger.Info("Task published to RabbitMQ", "taskUUID", signature.UUID)
 	case "redis":
@@ -218,16 +205,16 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 		if redisBroker, ok := r.broker.(*redis.RedisBroker); ok {
 			// Publish directly without serialization because RedisBroker's Publish already handles it
 			if err := redisBroker.Publish(ctx, signature); err != nil {
-				return fmt.Errorf("Failed to store task in Redis: %s", err)
+				return fmt.Errorf("failed to store task in Redis: %s", err)
 			}
 			logger.ApplicationLogger.Info("Task published to Redis", "taskUUID", signature.UUID)
 		} else {
-			return fmt.Errorf("Broker is not of type RedisBroker")
+			return fmt.Errorf("broker is not of type RedisBroker")
 		}
 
 	default:
 		// If the broker type is unsupported
-		return fmt.Errorf("Unsupported broker type: %s", r.broker.BrokerType())
+		return fmt.Errorf("unsupported broker type: %s", r.broker.BrokerType())
 	}
 
 	return nil

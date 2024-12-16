@@ -63,7 +63,6 @@ func (rp *redisProvider) Publish(ctx context.Context, queue string, message *sch
 	return err
 }
 
-
 func (rp *redisProvider) Subscribe(queue string, handler func(*schema.Signature) error) error {
 
 	// Validate inputs early

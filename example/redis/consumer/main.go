@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/workerpool"
-	"github.com/surendratiwari3/paota/logger"
-	"os"
 )
 
 type printWorker struct {
@@ -24,10 +25,10 @@ func main() {
 
 	// Configure Redis Broker
 	cnf := config.Config{
-		Broker: "redis",
+		Broker:        "redis",
 		TaskQueueName: "paota_task_queue",
 		Redis: &config.RedisConfig{
-			Address:  "localhost:6379", // Replace with your Redis server address
+			Address: "localhost:6379", // Replace with your Redis server address
 		},
 	}
 
