@@ -310,3 +310,7 @@ func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
 	}
 	return delayMs
 }
+
+func (b *AMQPBroker) BrokerType() string {
+    return "rabbitmq"  // Return "rabbitmq" to indicate it's a RabbitMQ broker
+}
