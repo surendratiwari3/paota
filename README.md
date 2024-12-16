@@ -101,7 +101,7 @@ In summary, Paota facilitates the asynchronous processing of tasks in a distribu
 
 The `Config` struct holds all configuration options for Paota. It includes the following parameters:
 
-- **Broker**: The message broker to be used. Currently, only "amqp" is supported.
+- **Broker**: The message broker to be used. Currently, only "amqp" and "redis" is supported.
 - **Store**: The type of storage to be used (optional).
 - **TaskQueueName**: The name of the task queue. Default value is "paota_tasks".
 - **StoreQueueName**: The name of the storage queue (optional).
@@ -245,4 +245,32 @@ Total Records Processed: 10 Lakh data records.
 
 Thank you for flying Paota!
 
+# Redis broker 
+The Redis broker acts as a message queue for tasks, enabling asynchronous task processing using a worker pool. The tasks are serialized and stored in Redis, and workers consume these tasks for execution. 
 
+## Redis broker workflow
+   1. Create Worker Pool: Initialize the worker pool with the Redis broker configuration.
+   2. Register Tasks: Define and register task handlers (e.g., Print task).
+   3. Publish Tasks: Use the SendTaskWithContext method to publish tasks to the Redis queue.
+   4. Process Tasks: Workers consume tasks from the Redis queue and execute the corresponding handlers.
+
+## Sample Task Format
+        {       
+                "UUID": "task_8341a57b-d26d-4bec-94bc-9ef911dc5072",
+                "Name": "Print",
+                "Args": [
+                            {
+                                "Name": "Arg_Name",
+                                "Type": "string",
+                                "Value": "{\"id\":\"1\",\"name\":\"Jane Doe\",\"email\":\"jane.doe@example.com\"}"
+                            }
+                        ],
+                "RoutingKey": "",
+                "Priority": 0,
+                "RetryCount": 10,
+                "RetryTimeout": 0,
+                "WaitTime": 0,
+                "RetriesDone": 0,
+                "IgnoreWhenTaskNotRegistered": true,
+                "ETA": null
+        }
