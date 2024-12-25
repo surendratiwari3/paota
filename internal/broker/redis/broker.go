@@ -2,6 +2,8 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
@@ -34,8 +36,46 @@ func NewRedisBroker(provider provider.RedisProviderInterface, config *config.Con
 	return broker, nil
 }
 
+func (rb *RedisBroker) getTaskDelay(signature *schema.Signature) time.Duration {
+	if signature.ETA != nil {
+		now := time.Now().UTC()
+		if signature.ETA.After(now) {
+			return signature.ETA.Sub(now)
+		}
+	}
+	return 0
+}
+
 func (rb *RedisBroker) Publish(ctx context.Context, signature *schema.Signature) error {
-	return rb.provider.Publish(ctx, rb.config.TaskQueueName, signature)
+	delay := rb.getTaskDelay(signature)
+
+	if delay > 0 {
+		// Add to delayed queue with future timestamp as score
+		taskBytes, err := json.Marshal(signature)
+		if err != nil {
+			return fmt.Errorf("failed to marshal delayed task: %v", err)
+		}
+
+		conn := rb.provider.GetConn()
+		defer conn.Close()
+
+		// Calculate exact execution time
+		executeAt := time.Now().UTC().Add(delay).Unix()
+
+		_, err = conn.Do("ZADD", rb.config.Redis.DelayedTasksKey, executeAt, taskBytes)
+		if err != nil {
+			return fmt.Errorf("failed to add delayed task: %v", err)
+		}
+
+		logger.ApplicationLogger.Info("Task scheduled for delayed execution",
+			"task", signature.Name,
+			"delay", delay,
+			"executeAt", time.Unix(executeAt, 0))
+		return nil
+	}
+
+	// No delay, publish immediately
+	return rb.publishToMainQueue(ctx, signature)
 }
 
 func (rb *RedisBroker) StartConsumer(ctx context.Context, workerGroup workergroup.WorkerGroupInterface) error {
@@ -81,56 +121,39 @@ func (rb *RedisBroker) processDelayedTasks() {
 			return
 		case <-ticker.C:
 			delayedKey := rb.config.Redis.DelayedTasksKey
-			if delayedKey == "" {
-				delayedKey = "paota_tasks_delayed" // Ensure default key
-			}
 			mainQueue := rb.config.TaskQueueName
 
 			conn := rb.provider.GetConn()
 			now := time.Now().UTC().Unix()
 
-			logger.ApplicationLogger.Debug("Checking delayed tasks",
-				"delayedKey", delayedKey,
-				"currentTime", now)
-
 			// Get tasks that are ready (score <= current timestamp)
 			tasks, err := redis.Values(conn.Do("ZRANGEBYSCORE", delayedKey, "-inf", now))
 			if err != nil {
-				logger.ApplicationLogger.Error("Failed to get delayed tasks",
-					"error", err,
-					"delayedKey", delayedKey)
+				logger.ApplicationLogger.Error("Failed to get delayed tasks", "error", err)
 				conn.Close()
 				continue
 			}
 
-			logger.ApplicationLogger.Debug("Found delayed tasks", "count", len(tasks))
-
 			for _, task := range tasks {
 				taskBytes, ok := task.([]byte)
 				if !ok {
-					logger.ApplicationLogger.Error("Invalid task data type")
 					continue
 				}
 
-				// Log task details before moving
-				logger.ApplicationLogger.Info("Moving task to main queue",
-					"mainQueue", mainQueue,
-					"taskData", string(taskBytes))
-
-				// Move to main queue and remove from delayed set atomically
+				// Execute in a transaction to ensure atomicity
 				conn.Send("MULTI")
+				// Move to main queue
 				conn.Send("LPUSH", mainQueue, taskBytes)
+				// Remove from delayed queue
 				conn.Send("ZREM", delayedKey, taskBytes)
-				reply, err := redis.Values(conn.Do("EXEC"))
 
-				if err != nil {
-					logger.ApplicationLogger.Error("Failed to move delayed task",
+				if _, err := redis.Values(conn.Do("EXEC")); err != nil {
+					logger.ApplicationLogger.Error("Failed to move task to main queue",
 						"error", err,
-						"mainQueue", mainQueue)
+						"task", string(taskBytes))
 				} else {
-					logger.ApplicationLogger.Info("Successfully moved delayed task",
-						"mainQueue", mainQueue,
-						"reply", reply)
+					logger.ApplicationLogger.Info("Moved delayed task to main queue",
+						"task", string(taskBytes))
 				}
 			}
 			conn.Close()
@@ -155,4 +178,17 @@ func (rb *RedisBroker) Close() error {
 		close(rb.stopChan)
 	}
 	return nil
+}
+
+func (rb *RedisBroker) publishToMainQueue(ctx context.Context, signature *schema.Signature) error {
+	taskBytes, err := json.Marshal(signature)
+	if err != nil {
+		return fmt.Errorf("failed to marshal task: %v", err)
+	}
+
+	conn := rb.provider.GetConn()
+	defer conn.Close()
+
+	_, err = conn.Do("LPUSH", rb.config.TaskQueueName, taskBytes)
+	return err
 }

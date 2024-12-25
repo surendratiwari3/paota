@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/logger"
@@ -23,6 +24,10 @@ type retryTestWorker struct {
     mu         sync.Mutex      // Protect the map
 }
 
+type scheduledWorker struct {
+    workerPool workerpool.Pool
+}
+
 func main() {
 	// Configure Redis Broker
 	cnf := config.Config{
@@ -30,6 +35,7 @@ func main() {
 		TaskQueueName: "paota_task_queue",
 		Redis: &config.RedisConfig{
 			Address: "localhost:6379", // Replace with your Redis server address
+			DelayedTasksKey: "paota_delayed_tasks", // Key for delayed/scheduled tasks
 		},
 	}
 
@@ -50,12 +56,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Create the worker instance
+	// Create the worker instances
 	printWorker := printWorker{workerPool: newWorkerPool}
 	retryWorker := &retryTestWorker{
         workerPool: newWorkerPool,
         attempts: make(map[string]int),
     }
+	scheduledWorker := scheduledWorker{workerPool: newWorkerPool}
 
 	logger.ApplicationLogger.Info("newWorkerPool created successfully")
 
@@ -63,6 +70,7 @@ func main() {
 	regTasks := map[string]interface{}{
 		"Print": printWorker.Print,
 		"RetryTest": retryWorker.RetryTest,
+		"ScheduledTask": scheduledWorker.ScheduledTask,
 	}
 	err = newWorkerPool.RegisterTasks(regTasks)
 	if err != nil {
@@ -115,5 +123,38 @@ func (w *retryTestWorker) RetryTest(arg *schema.Signature) error {
         "taskID", arg.UUID,
         "attempts", attempts,
     )
+    return nil
+}
+
+func (sw scheduledWorker) ScheduledTask(arg *schema.Signature) error {
+    // Log when the task actually executes
+    executionTime := time.Now().UTC()
+    
+    // Parse the scheduled time from args if provided
+    var scheduledTime time.Time
+    if len(arg.Args) > 0 {
+        if timeStr, ok := arg.Args[0].Value.(string); ok {
+            if parsed, err := time.Parse(time.RFC3339, timeStr); err == nil {
+                scheduledTime = parsed
+            }
+        }
+    }
+
+    logger.ApplicationLogger.Info("Executing scheduled task",
+        "taskID", arg.UUID,
+        "scheduledFor", scheduledTime,
+        "executedAt", executionTime,
+        "data", arg.Args,
+    )
+
+    // Calculate drift if we have a scheduled time
+    if !scheduledTime.IsZero() {
+        drift := executionTime.Sub(scheduledTime)
+        logger.ApplicationLogger.Info("Scheduled task timing",
+            "taskID", arg.UUID,
+            "driftSeconds", drift.Seconds(),
+        )
+    }
+
     return nil
 }

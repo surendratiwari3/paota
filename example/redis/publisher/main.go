@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/logger"
@@ -26,7 +27,8 @@ func main() {
 		Broker:        "redis",
 		TaskQueueName: "paota_task_queue",
 		Redis: &config.RedisConfig{
-			Address: "localhost:6379",
+			Address:         "localhost:6379",
+			DelayedTasksKey: "paota_delayed_tasks",
 		},
 	}
 
@@ -75,8 +77,29 @@ func main() {
 				Value: "test retry mechanism",
 			},
 		},
-		RetryCount:   5, // Allow up to 5 retries
+		RetryCount:   5,  // Allow up to 5 retries
 		RetryTimeout: 20, // Retry every 3 seconds
+	}
+
+	// Create a scheduled task to run in 1 minute
+	eta := time.Now().Add(1 * time.Minute)
+	scheduledJob := &schema.Signature{
+		Name: "ScheduledTask",
+		Args: []schema.Arg{
+			{
+				Type:  "string",
+				Value: "This is a scheduled task",
+			},
+		},
+		ETA: &eta,
+	}
+
+	// Send the scheduled task
+	_, err = newWorkerPool.SendTaskWithContext(context.Background(), scheduledJob)
+	if err != nil {
+		logger.ApplicationLogger.Error("failed to send scheduled task", err)
+	} else {
+		logger.ApplicationLogger.Info("Scheduled task published successfully")
 	}
 
 	// Send the retry test job
@@ -90,11 +113,11 @@ func main() {
 	// Use a WaitGroup to synchronize goroutines
 	var waitGrp sync.WaitGroup
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1; i++ {
 		waitGrp.Add(1) // Add to the WaitGroup counter for each goroutine
 		go func() {
 			defer waitGrp.Done() // Mark this goroutine as done when it exits
-			for j := 0; j < 10; j++ {
+			for j := 0; j < 1; j++ {
 				_, err := newWorkerPool.SendTaskWithContext(context.Background(), printJob)
 				if err != nil {
 					logger.ApplicationLogger.Error("failed to send task", err)
