@@ -5,11 +5,11 @@ import (
 	"github.com/surendratiwari3/paota/internal/broker"
 	amqpBroker "github.com/surendratiwari3/paota/internal/broker/amqp"
 	"github.com/surendratiwari3/paota/internal/broker/redis"
+	"github.com/surendratiwari3/paota/internal/provider"
 	"github.com/surendratiwari3/paota/internal/task"
 	"github.com/surendratiwari3/paota/internal/task/memory"
 	"github.com/surendratiwari3/paota/logger"
 	appErrors "github.com/surendratiwari3/paota/schema/errors"
-	"github.com/surendratiwari3/paota/internal/provider"
 )
 
 type IFactory interface {
