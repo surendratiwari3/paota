@@ -73,7 +73,7 @@ func (r *DefaultTaskRegistrar) IsTaskRegistered(name string) bool {
 func (r *DefaultTaskRegistrar) GetRegisteredTask(name string) (interface{}, error) {
 	taskFunc, ok := r.registeredTasks.Load(name)
 	if !ok {
-		return nil, fmt.Errorf("Task not registered error: %s", name)
+		return nil, fmt.Errorf("task not registered error: %s", name)
 	}
 	return taskFunc, nil
 }
@@ -143,21 +143,87 @@ func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
 }
 
 func (r *DefaultTaskRegistrar) redisMsgProcessor(signature *schema.Signature) error {
-	// Process the signature as you would with any task signature
 	registeredTaskFunc, err := r.GetRegisteredTask(signature.Name)
 	if err != nil || registeredTaskFunc == nil {
 		logger.ApplicationLogger.Error("task not registered or invalid task function", signature.Name)
 		return appError.ErrTaskNotRegistered
 	}
 
-	// Assuming the task function is of type func(*schema.Signature) error
 	fn, ok := registeredTaskFunc.(func(*schema.Signature) error)
 	if !ok {
 		logger.ApplicationLogger.Error("Invalid task function type", signature.Name)
 		return appError.ErrTaskMustBeFunc
 	}
 
-	return fn(signature)
+	// Execute the task
+	if err := fn(signature); err != nil {
+		// If task execution fails, handle retry logic
+		if err := r.retryRedisTask(signature); err != nil {
+			logger.ApplicationLogger.Error("Failed to retry task", "error", err)
+			return err
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (r *DefaultTaskRegistrar) retryRedisTask(signature *schema.Signature) error {
+	// Set default retry values if not specified
+	if signature.RetryCount == 0 {
+		signature.RetryCount = r.configProvider.GetConfig().Redis.RetryCount
+	}
+	if signature.RetryTimeout == 0 {
+		signature.RetryTimeout = r.configProvider.GetConfig().Redis.RetryTimeout
+	}
+
+	// Check if we've exceeded retry count
+	if signature.RetriesDone >= signature.RetryCount {
+		logger.ApplicationLogger.Info("Max retry attempts reached",
+			"task", signature.Name,
+			"attempts", signature.RetriesDone,
+		)
+		return fmt.Errorf("max retry attempts reached for task: %s", signature.Name)
+	}
+
+	// Increment retry counter
+	signature.RetriesDone++
+
+	// Calculate next retry time using the signature's RetryTimeout
+	retryDelay := time.Duration(signature.RetryTimeout) * time.Second
+	eta := time.Now().UTC().Add(retryDelay)
+	signature.ETA = &eta
+
+	if redisBroker, ok := r.broker.(*redis.RedisBroker); ok {
+		delayedKey := r.configProvider.GetConfig().Redis.DelayedTasksKey
+		if delayedKey == "" {
+			delayedKey = "paota_tasks_delayed"
+		}
+
+		taskBytes, err := json.Marshal(signature)
+		if err != nil {
+			return fmt.Errorf("failed to serialize task: %v", err)
+		}
+
+		conn := redisBroker.GetProvider().GetConn()
+		defer conn.Close()
+
+		// Use ETA's Unix timestamp as score for proper delay
+		_, err = conn.Do("ZADD", delayedKey, eta.Unix(), taskBytes)
+		if err != nil {
+			return fmt.Errorf("failed to add task to delayed queue: %v", err)
+		}
+
+		logger.ApplicationLogger.Info("Task scheduled for retry",
+			"task", signature.Name,
+			"attempt", signature.RetriesDone,
+			"nextRetry", eta,
+			"delaySeconds", signature.RetryTimeout)
+
+		return nil
+	}
+
+	return fmt.Errorf("broker is not of type RedisBroker")
 }
 
 func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {

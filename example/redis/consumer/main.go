@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"sync"
 
-	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
@@ -16,13 +17,13 @@ type printWorker struct {
 	workerPool workerpool.Pool
 }
 
-func main() {
-	// Configure logger
-	logrusLog := logrus.StandardLogger()
-	logrusLog.SetFormatter(&logrus.JSONFormatter{})
-	logrusLog.SetReportCaller(true)
-	logger.ApplicationLogger = logrusLog
+type retryTestWorker struct {
+    workerPool workerpool.Pool
+    attempts   map[string]int  // Track attempts per task
+    mu         sync.Mutex      // Protect the map
+}
 
+func main() {
 	// Configure Redis Broker
 	cnf := config.Config{
 		Broker:        "redis",
@@ -51,12 +52,17 @@ func main() {
 
 	// Create the worker instance
 	printWorker := printWorker{workerPool: newWorkerPool}
+	retryWorker := &retryTestWorker{
+        workerPool: newWorkerPool,
+        attempts: make(map[string]int),
+    }
 
 	logger.ApplicationLogger.Info("newWorkerPool created successfully")
 
 	// Register tasks
 	regTasks := map[string]interface{}{
 		"Print": printWorker.Print,
+		"RetryTest": retryWorker.RetryTest,
 	}
 	err = newWorkerPool.RegisterTasks(regTasks)
 	if err != nil {
@@ -85,4 +91,29 @@ func (wp printWorker) Print(arg *schema.Signature) error {
 
 	logger.ApplicationLogger.Infof("Processing task: %v", user)
 	return nil
+}
+
+func (w *retryTestWorker) RetryTest(arg *schema.Signature) error {
+    w.mu.Lock()
+    w.attempts[arg.UUID]++
+    attempts := w.attempts[arg.UUID]
+    w.mu.Unlock()
+
+    logger.ApplicationLogger.Info("Processing RetryTest task", 
+        "taskID", arg.UUID,
+        "attempt", attempts,
+        "data", arg.Args[0].Value,
+    )
+
+    // Fail first 3 attempts
+    if attempts <= 3 {
+        return fmt.Errorf("intentional failure, attempt %d/3", attempts)
+    }
+
+    // Succeed on 4th attempt
+    logger.ApplicationLogger.Info("RetryTest task succeeded", 
+        "taskID", arg.UUID,
+        "attempts", attempts,
+    )
+    return nil
 }

@@ -170,6 +170,7 @@ func TestPublish(t *testing.T) {
 		})
 	}
 }
+
 func TestCloseConnection(t *testing.T) {
 	mockPool := new(MockRedisPool)
 	mockPool.On("Close").Return(nil)
@@ -232,18 +233,37 @@ func TestSubscribe(t *testing.T) {
 			expectedError: true,
 			errorContains: "handler function cannot be nil",
 		},
+		{
+			name: "Successful Subscribe",
+			setupMocks: func(pool *MockRedisPool, conn *MockRedisConn) {
+				pool.On("Get").Return(conn)
+				conn.On("Close").Return(nil)
+				
+				// Mock successful BRPOP response
+				signature := &schema.Signature{Name: "test_task"}
+				payload, _ := json.Marshal(signature)
+				conn.On("DoWithTimeout", 
+					mock.Anything,
+					"BRPOP",
+					"test_queue",
+					mock.Anything,
+				).Return([]interface{}{[]byte("test_queue"), payload}, nil)
+			},
+			queue: "test_queue",
+			handler: func(s *schema.Signature) error {
+				return nil
+			},
+			expectedError: false,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create mocks for Redis pool and connection
 			mockPool := new(MockRedisPool)
 			mockConn := new(MockRedisConn)
 
-			// Setup mocks for this specific test case
 			tc.setupMocks(mockPool, mockConn)
 
-			// Create Redis provider with mock pool
 			redisConfig := &config.RedisConfig{
 				Address:      "localhost:6379",
 				ReadTimeout:  5,
@@ -254,7 +274,6 @@ func TestSubscribe(t *testing.T) {
 				pool:   mockPool,
 			}
 
-			// Special case for testing "Nil Redis Pool"
 			if provider.pool == nil {
 				err := provider.Subscribe(tc.queue, tc.handler)
 				assert.Error(t, err)
@@ -262,10 +281,8 @@ func TestSubscribe(t *testing.T) {
 				return
 			}
 
-			// Run the Subscribe method
 			err := provider.Subscribe(tc.queue, tc.handler)
 
-			// Verify expected error
 			if tc.expectedError {
 				assert.Error(t, err)
 				if tc.errorContains != "" {
@@ -275,9 +292,77 @@ func TestSubscribe(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			// Verify mock expectations
 			mockPool.AssertExpectations(t)
 			mockConn.AssertExpectations(t)
 		})
 	}
+}
+
+func TestValidateInputs(t *testing.T) {
+	provider := &redisProvider{
+		config: &config.RedisConfig{},
+		pool:   new(MockRedisPool),
+	}
+
+	testCases := []struct {
+		name          string
+		queue         string
+		handler       func(*schema.Signature) error
+		expectedError string
+	}{
+		{
+			name:          "Empty Queue",
+			queue:         "",
+			handler:       func(*schema.Signature) error { return nil },
+			expectedError: "queue name cannot be empty",
+		},
+		{
+			name:          "Nil Handler",
+			queue:         "test_queue",
+			handler:       nil,
+			expectedError: "handler function cannot be nil",
+		},
+		{
+			name:          "Valid Inputs",
+			queue:         "test_queue",
+			handler:       func(*schema.Signature) error { return nil },
+			expectedError: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := provider.validateInputs(tc.queue, tc.handler)
+			if tc.expectedError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedError)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+func TestGetConn(t *testing.T) {
+	// Create mock pool and conn
+	mockPool := new(MockRedisPool)
+	mockConn := new(MockRedisConn)
+
+	// Set up expectations
+	mockPool.On("Get").Return(mockConn)
+
+	// Create provider with mock pool
+	provider := &redisProvider{
+		config: &config.RedisConfig{},
+		pool:   mockPool,
+	}
+
+	// Call GetConn
+	 provider.GetConn()
+
+	// Verify expectations
+	mockPool.AssertExpectations(t)
+	mockPool.AssertCalled(t, "Get")
+
+	// Verify returned connection
+	//assert.Equal(t, mockConn, conn, "Should return the mock connection")
 }

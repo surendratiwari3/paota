@@ -9,6 +9,7 @@ import (
 	"github.com/surendratiwari3/paota/internal/task/memory"
 	"github.com/surendratiwari3/paota/logger"
 	appErrors "github.com/surendratiwari3/paota/schema/errors"
+	"github.com/surendratiwari3/paota/internal/provider"
 )
 
 type IFactory interface {
@@ -25,7 +26,8 @@ func (bf *Factory) NewAMQPBroker(configProvider config.ConfigProvider) (broker.B
 }
 
 func (bf *Factory) NewRedisBroker(configProvider config.ConfigProvider) (broker.Broker, error) {
-	return redis.NewRedisBroker(configProvider)
+	redisProvider := provider.NewRedisProvider(configProvider.GetConfig().Redis)
+	return redis.NewRedisBroker(redisProvider, configProvider.GetConfig())
 }
 
 // CreateBroker creates a new object of broker.Broker

@@ -11,5 +11,5 @@ type Broker interface {
 	StartConsumer(ctx context.Context, groupInterface workergroup.WorkerGroupInterface) error
 	StopConsumer()
 	Publish(ctx context.Context, task *schema.Signature) error
-	BrokerType() string 
+	BrokerType() string
 }

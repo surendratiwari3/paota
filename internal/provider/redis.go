@@ -21,6 +21,7 @@ type RedisProviderInterface interface {
 	Publish(ctx context.Context, queue string, message *schema.Signature) error
 	Subscribe(queue string, handler func(*schema.Signature) error) error
 	CloseConnection() error
+	GetConn() redis.Conn
 }
 
 type redisProvider struct {
@@ -125,4 +126,8 @@ func (rp *redisProvider) validateInputs(queue string, handler func(*schema.Signa
 		return errors.New("redis pool is not initialized")
 	}
 	return nil
+}
+
+func (r *redisProvider) GetConn() redis.Conn {
+    return r.pool.Get()
 }

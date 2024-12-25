@@ -6,7 +6,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
@@ -21,10 +20,6 @@ type UserRecord struct {
 }
 
 func main() {
-	// Configure logger
-	logrusLog := logrus.StandardLogger()
-	logrusLog.SetFormatter(&logrus.JSONFormatter{})
-	logger.ApplicationLogger = logrusLog
 
 	// Configure Redis broker
 	cnf := config.Config{
@@ -69,6 +64,27 @@ func main() {
 		},
 		RetryCount:                  10,
 		IgnoreWhenTaskNotRegistered: true,
+	}
+
+	// Add this after your existing print job
+	retryJob := &schema.Signature{
+		Name: "RetryTest",
+		Args: []schema.Arg{
+			{
+				Type:  "string",
+				Value: "test retry mechanism",
+			},
+		},
+		RetryCount:   5, // Allow up to 5 retries
+		RetryTimeout: 20, // Retry every 3 seconds
+	}
+
+	// Send the retry test job
+	_, err = newWorkerPool.SendTaskWithContext(context.Background(), retryJob)
+	if err != nil {
+		logger.ApplicationLogger.Error("failed to send retry test task", err)
+	} else {
+		logger.ApplicationLogger.Info("Retry test task published successfully")
 	}
 
 	// Use a WaitGroup to synchronize goroutines
