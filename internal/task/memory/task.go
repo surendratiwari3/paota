@@ -31,11 +31,12 @@ type DefaultTaskRegistrar struct {
 }
 
 func NewDefaultTaskRegistrar(brk broker.Broker, configProvider config.ConfigProvider) task.TaskRegistrarInterface {
-	return &DefaultTaskRegistrar{
+	registrar := &DefaultTaskRegistrar{
 		registeredTasks: new(sync.Map),
 		broker:          brk,
 		configProvider:  configProvider,
 	}
+	return registrar
 }
 
 // RegisterTasks registers all tasks at once
@@ -143,29 +144,140 @@ func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
 }
 
 func (r *DefaultTaskRegistrar) redisMsgProcessor(signature *schema.Signature) error {
+	// Validate task
+	fn, err := r.validateTask(signature)
+	if err != nil {
+		return err
+	}
+
+	// Handle task execution
+	return r.executeTask(signature, fn)
+}
+
+func (r *DefaultTaskRegistrar) validateTask(signature *schema.Signature) (func(*schema.Signature) error, error) {
 	registeredTaskFunc, err := r.GetRegisteredTask(signature.Name)
 	if err != nil || registeredTaskFunc == nil {
 		logger.ApplicationLogger.Error("task not registered or invalid task function", signature.Name)
-		return appError.ErrTaskNotRegistered
+		return nil, appError.ErrTaskNotRegistered
 	}
 
 	fn, ok := registeredTaskFunc.(func(*schema.Signature) error)
 	if !ok {
 		logger.ApplicationLogger.Error("Invalid task function type", signature.Name)
-		return appError.ErrTaskMustBeFunc
+		return nil, appError.ErrTaskMustBeFunc
 	}
+	return fn, nil
+}
 
-	// Execute the task
-	if err := fn(signature); err != nil {
-		// If task execution fails, handle retry logic
-		if err := r.retryRedisTask(signature); err != nil {
-			logger.ApplicationLogger.Error("Failed to retry task", "error", err)
-			return err
-		}
+func (r *DefaultTaskRegistrar) executeTask(signature *schema.Signature, fn func(*schema.Signature) error) error {
+	if err := r.moveToProcessing(signature); err != nil {
+		logger.ApplicationLogger.Error("Failed to move task to processing", "error", err)
 		return err
 	}
 
+	if err := fn(signature); err != nil {
+		return r.handleTaskError(signature, err)
+	}
+
+	return r.removeFromProcessing(signature)
+}
+
+func (r *DefaultTaskRegistrar) handleTaskError(signature *schema.Signature, err error) error {
+	if retryErr := r.retryRedisTask(signature); retryErr != nil {
+		logger.ApplicationLogger.Error("Failed to retry task", "error", retryErr)
+		if recoverErr := r.recoverFailedTask(signature); recoverErr != nil {
+			logger.ApplicationLogger.Error("Failed to recover task", "error", recoverErr)
+		}
+		return retryErr
+	}
+	return err
+}
+
+// Helper functions to manage task state
+func (r *DefaultTaskRegistrar) moveToProcessing(signature *schema.Signature) error {
+	if redisBroker, ok := r.broker.(*redis.RedisBroker); ok {
+		processingKey := r.getProcessingKey()
+
+		taskBytes, err := json.Marshal(signature)
+		if err != nil {
+			return fmt.Errorf(errSerializeTask, err)
+		}
+
+		conn := redisBroker.GetProvider().GetConn()
+		defer conn.Close()
+
+		_, err = conn.Do("ZADD", processingKey, time.Now().Unix(), taskBytes)
+		return err
+	}
 	return nil
+}
+
+func (r *DefaultTaskRegistrar) removeFromProcessing(signature *schema.Signature) error {
+	if redisBroker, ok := r.broker.(*redis.RedisBroker); ok {
+		processingKey := r.getProcessingKey()
+
+		taskBytes, err := json.Marshal(signature)
+		if err != nil {
+			return fmt.Errorf(errSerializeTask, err)
+		}
+
+		conn := redisBroker.GetProvider().GetConn()
+		defer conn.Close()
+
+		_, err = conn.Do("ZREM", processingKey, taskBytes)
+		return err
+	}
+	return nil
+}
+
+func (r *DefaultTaskRegistrar) recoverFailedTask(signature *schema.Signature) error {
+	if redisBroker, ok := r.broker.(*redis.RedisBroker); ok {
+		delayedKey := r.configProvider.GetConfig().Redis.DelayedTasksKey
+		if delayedKey == "" {
+			delayedKey = "paota_tasks_delayed"
+		}
+		processingKey := r.getProcessingKey()
+
+		taskBytes, err := json.Marshal(signature)
+		if err != nil {
+			return fmt.Errorf(errSerializeTask, err)
+		}
+
+		conn := redisBroker.GetProvider().GetConn()
+		defer conn.Close()
+
+		// Start transaction
+		if _, err := conn.Do("MULTI"); err != nil {
+			return err
+		}
+
+		// Move from processing back to delayed queue
+		_, err = conn.Do("ZADD", delayedKey, time.Now().Unix(), taskBytes)
+		if err != nil {
+			conn.Do("DISCARD")
+			return err
+		}
+
+		// Remove from processing
+		_, err = conn.Do("ZREM", processingKey, taskBytes)
+		if err != nil {
+			conn.Do("DISCARD")
+			return err
+		}
+
+		// Commit transaction
+		_, err = conn.Do("EXEC")
+		return err
+	}
+	return nil
+}
+
+func (r *DefaultTaskRegistrar) getProcessingKey() string {
+	delayedKey := r.configProvider.GetConfig().Redis.DelayedTasksKey
+	if delayedKey == "" {
+		delayedKey = "paota_tasks_delayed"
+	}
+	return delayedKey + "_processing"
 }
 
 func (r *DefaultTaskRegistrar) retryRedisTask(signature *schema.Signature) error {
@@ -195,23 +307,8 @@ func (r *DefaultTaskRegistrar) retryRedisTask(signature *schema.Signature) error
 	signature.ETA = &eta
 
 	if redisBroker, ok := r.broker.(*redis.RedisBroker); ok {
-		delayedKey := r.configProvider.GetConfig().Redis.DelayedTasksKey
-		if delayedKey == "" {
-			delayedKey = "paota_tasks_delayed"
-		}
-
-		taskBytes, err := json.Marshal(signature)
-		if err != nil {
-			return fmt.Errorf("failed to serialize task: %v", err)
-		}
-
-		conn := redisBroker.GetProvider().GetConn()
-		defer conn.Close()
-
-		// Use ETA's Unix timestamp as score for proper delay
-		_, err = conn.Do("ZADD", delayedKey, eta.Unix(), taskBytes)
-		if err != nil {
-			return fmt.Errorf("failed to add task to delayed queue: %v", err)
+		if err := r.executeRedisRetry(redisBroker, signature, eta); err != nil {
+			return err
 		}
 
 		logger.ApplicationLogger.Info("Task scheduled for retry",
@@ -224,6 +321,58 @@ func (r *DefaultTaskRegistrar) retryRedisTask(signature *schema.Signature) error
 	}
 
 	return fmt.Errorf("broker is not of type RedisBroker")
+}
+
+func (r *DefaultTaskRegistrar) executeRedisRetry(redisBroker *redis.RedisBroker, signature *schema.Signature, eta time.Time) error {
+	delayedKey := r.configProvider.GetConfig().Redis.DelayedTasksKey
+	if delayedKey == "" {
+		delayedKey = "paota_tasks_delayed"
+	}
+	processingKey := delayedKey + "_processing"
+
+	taskBytes, err := json.Marshal(signature)
+	if err != nil {
+		return fmt.Errorf(errSerializeTask, err)
+	}
+
+	conn := redisBroker.GetProvider().GetConn()
+	defer conn.Close()
+
+	// Start a Redis transaction
+	if _, err := conn.Do("MULTI"); err != nil {
+		return fmt.Errorf("failed to start transaction: %v", err)
+	}
+
+	// 1. First move to processing set (temporary storage)
+	if _, err = conn.Do("ZADD", processingKey, eta.Unix(), taskBytes); err != nil {
+		conn.Do("DISCARD")
+		return fmt.Errorf("failed to add task to processing queue: %v", err)
+	}
+
+	// 2. Remove from original set (if it exists)
+	if _, err = conn.Do("ZREM", delayedKey, taskBytes); err != nil {
+		conn.Do("DISCARD")
+		return fmt.Errorf("failed to remove task from original queue: %v", err)
+	}
+
+	// 3. Add to delayed set
+	if _, err = conn.Do("ZADD", delayedKey, eta.Unix(), taskBytes); err != nil {
+		conn.Do("DISCARD")
+		return fmt.Errorf("failed to add task to delayed queue: %v", err)
+	}
+
+	// 4. Remove from processing set
+	if _, err = conn.Do("ZREM", processingKey, taskBytes); err != nil {
+		conn.Do("DISCARD")
+		return fmt.Errorf("failed to remove task from processing queue: %v", err)
+	}
+
+	// Commit the transaction
+	if _, err := conn.Do("EXEC"); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return nil
 }
 
 func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
@@ -289,3 +438,7 @@ func SignatureToBytes(signature *schema.Signature) ([]byte, error) {
 	// Serialize signature to JSON (you can use other formats if needed)
 	return json.Marshal(signature)
 }
+
+const (
+	errSerializeTask = "failed to serialize task: %v"
+)
