@@ -17,12 +17,13 @@ type ConfigProvider interface {
 
 // Config holds all configuration for Paota
 type Config struct {
-	Broker         string         `env:"BROKER" envDefault:"amqp" validate:"required,oneof=amqp"` //allowed amqp
+	Broker         string         `env:"BROKER" envDefault:"amqp" validate:"required,oneof=amqp redis"` //allowed amqp and redis
 	Store          string         `env:"STORE"`
 	TaskQueueName  string         `env:"QUEUE_NAME" envDefault:"paota_tasks" validate:"required"`
 	StoreQueueName string         `env:"STORE_QUEUE_NAME"`
 	AMQP           *AMQPConfig    `envPrefix:"AMQP_"`
 	MongoDB        *MongoDBConfig `envPrefix:"MONGO_"`
+	Redis          *RedisConfig   `envPrefix:"REDIS_"`
 }
 
 type configProvider struct {

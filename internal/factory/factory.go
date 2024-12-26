@@ -4,6 +4,8 @@ import (
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/internal/broker"
 	amqpBroker "github.com/surendratiwari3/paota/internal/broker/amqp"
+	"github.com/surendratiwari3/paota/internal/broker/redis"
+	"github.com/surendratiwari3/paota/internal/provider"
 	"github.com/surendratiwari3/paota/internal/task"
 	"github.com/surendratiwari3/paota/internal/task/memory"
 	"github.com/surendratiwari3/paota/logger"
@@ -23,12 +25,19 @@ func (bf *Factory) NewAMQPBroker(configProvider config.ConfigProvider) (broker.B
 	return amqpBroker.NewAMQPBroker(configProvider)
 }
 
+func (bf *Factory) NewRedisBroker(configProvider config.ConfigProvider) (broker.Broker, error) {
+	redisProvider := provider.NewRedisProvider(configProvider.GetConfig().Redis)
+	return redis.NewRedisBroker(redisProvider, configProvider.GetConfig())
+}
+
 // CreateBroker creates a new object of broker.Broker
 func (bf *Factory) CreateBroker(configProvider config.ConfigProvider) (broker.Broker, error) {
 	brokerType := configProvider.GetConfig().Broker
 	switch brokerType {
 	case "amqp":
 		return bf.NewAMQPBroker(configProvider)
+	case "redis":
+		return bf.NewRedisBroker(configProvider)
 	default:
 		logger.ApplicationLogger.Error("unsupported broker")
 		return nil, appErrors.ErrUnsupportedBroker
