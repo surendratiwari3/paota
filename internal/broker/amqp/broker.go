@@ -187,7 +187,6 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-
 	// Bind the queue to the exchange
 	err = b.amqpProvider.QueueExchangeBind(channel, b.getTaskQueue(), b.config.AMQP.BindingKey, b.config.AMQP.Exchange)
 	if err != nil {
@@ -195,6 +194,17 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	}
 
 	err = b.amqpProvider.QueueExchangeBind(channel, b.getDelayedQueue(), b.getDelayedQueue(), b.getDelayedQueueDLX())
+	if err != nil {
+		return err
+	}
+
+	// Bind Queue and Bind
+	err = b.amqpProvider.DeclareQueue(channel, b.getFailedQueue(), declareQueueArgs)
+	if err != nil {
+		return err
+	}
+
+	err = b.amqpProvider.QueueExchangeBind(channel, b.getFailedQueue(), b.getFailedQueue(), b.config.AMQP.Exchange)
 	if err != nil {
 		return err
 	}
@@ -278,6 +288,10 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 
 func (b *AMQPBroker) getDelayedQueue() string {
 	return b.config.AMQP.DelayedQueue
+}
+
+func (b *AMQPBroker) getFailedQueue() string {
+	return b.config.AMQP.FailedQueue
 }
 
 func (b *AMQPBroker) getQueuePrefetchCount() int {

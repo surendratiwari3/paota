@@ -143,6 +143,7 @@ func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
 	} else {
 		retryInterval := r.getRetryInterval(signature.RetriesDone + 1)
 		if retryInterval > 0 {
+			signature.RetriesDone = signature.RetriesDone + 1
 			signature.RoutingKey = r.configProvider.GetConfig().AMQP.DelayedQueue
 		}
 		eta := time.Now().UTC().Add(retryInterval)
