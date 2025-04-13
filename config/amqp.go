@@ -17,6 +17,7 @@ type AMQPConfig struct {
 	PrefetchCount      int              `env:"PREFETCH_COUNT" validate:"required"`
 	AutoDelete         bool             `env:"AUTO_DELETE"`
 	DelayedQueue       string           `env:"DELAYED_QUEUE" envDefault:"paota_task_delayed_queue"`
+	FailedQueue        string           `env:"FAILED_QUEUE" envDefault:"paota_task_failed_queue"`
 	ConnectionPoolSize int              `env:"CONNECTION_POOL_SIZE" envDefault:"5"`
 	HeartBeatInterval  int              `env:"HEARTBEAT_INTERVAL" envDefault:"10"`
 }
