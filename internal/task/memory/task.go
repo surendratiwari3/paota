@@ -135,19 +135,20 @@ func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
 }
 
 func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
+
 	if signature.RetryCount < 1 {
-		return nil
+		signature.RoutingKey = r.configProvider.GetConfig().AMQP.FailedQueue
+	} else if signature.RetriesDone > (signature.RetryCount - 1) {
+		signature.RoutingKey = r.configProvider.GetConfig().AMQP.FailedQueue
+	} else {
+		retryInterval := r.getRetryInterval(signature.RetriesDone + 1)
+		if retryInterval > 0 {
+			signature.RetriesDone = signature.RetriesDone + 1
+			signature.RoutingKey = r.configProvider.GetConfig().AMQP.DelayedQueue
+		}
+		eta := time.Now().UTC().Add(retryInterval)
+		signature.ETA = &eta
 	}
-	signature.RetriesDone = signature.RetriesDone + 1
-	if signature.RetriesDone > signature.RetryCount {
-		return nil
-	}
-	retryInterval := r.getRetryInterval(signature.RetriesDone)
-	if retryInterval > 0 {
-		signature.RoutingKey = r.configProvider.GetConfig().AMQP.DelayedQueue
-	}
-	eta := time.Now().UTC().Add(retryInterval)
-	signature.ETA = &eta
 	return r.SendTask(signature)
 }
 
