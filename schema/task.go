@@ -45,7 +45,9 @@ type Signature struct {
 	RetryTimeout                int
 	WaitTime                    int
 	RetriesDone                 int
+	TaskTimeOut                 int
 	IgnoreWhenTaskNotRegistered bool
+	CreatedAt                   *time.Time
 	ETA                         *time.Time
 }
 
