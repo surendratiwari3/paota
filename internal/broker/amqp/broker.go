@@ -209,6 +209,17 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 		return err
 	}
 
+	// Bind Timeout Queue and Bind
+	err = b.amqpProvider.DeclareQueue(channel, b.getTimeoutQueue(), declareQueueArgs)
+	if err != nil {
+		return err
+	}
+
+	err = b.amqpProvider.QueueExchangeBind(channel, b.getTimeoutQueue(), b.getTimeoutQueue(), b.config.AMQP.Exchange)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -292,6 +303,10 @@ func (b *AMQPBroker) getDelayedQueue() string {
 
 func (b *AMQPBroker) getFailedQueue() string {
 	return b.config.AMQP.FailedQueue
+}
+
+func (b *AMQPBroker) getTimeoutQueue() string {
+	return b.config.AMQP.TimeoutQueue
 }
 
 func (b *AMQPBroker) getQueuePrefetchCount() int {
