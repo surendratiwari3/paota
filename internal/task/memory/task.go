@@ -197,6 +197,12 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 		taskID := uuid.New().String()
 		signature.UUID = fmt.Sprintf("task_%v", taskID)
 	}
+
+	if signature.CreatedAt == nil {
+		now := time.Now().UTC()
+		signature.CreatedAt = &now
+	}
+
 	if err := r.broker.Publish(ctx, signature); err != nil {
 		return fmt.Errorf("Publish message error: %s", err)
 	}
