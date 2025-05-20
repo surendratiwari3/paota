@@ -115,8 +115,10 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 	if r.checkTaskTimeout(signature) {
 		logger.ApplicationLogger.Warnf("Task %s timed out, pushing to timeout queue", signature.UUID)
 		if err := r.pushToTimeoutAmqpQueue(signature); err == nil {
-			_ = amqpJob.Ack(false)
+			_ = amqpJob.Nack(false, false)
+			return nil
 		}
+		logger.ApplicationLogger.Error("Task is not timeout and push to timeout queue failed")
 		_ = amqpJob.Nack(false, true)
 		return nil
 	}

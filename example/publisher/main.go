@@ -74,6 +74,7 @@ func main() {
 				Value: string(userJSON),
 			},
 		},
+		TaskTimeOut:                 20,
 		RetryCount:                  10,
 		IgnoreWhenTaskNotRegistered: true,
 	}
