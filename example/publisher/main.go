@@ -67,14 +67,9 @@ func main() {
 	}
 
 	printJob := &schema.Signature{
-		Name: "Print",
-		Args: []schema.Arg{
-			{
-				Type:  "string",
-				Value: string(userJSON),
-			},
-		},
-		TaskTimeOut:                 20,
+		Name:                        "Print",
+		RawArgs:                     userJSON,
+		TaskTimeOut:                 100,
 		RetryCount:                  10,
 		IgnoreWhenTaskNotRegistered: true,
 	}
@@ -83,7 +78,15 @@ func main() {
 	waitGrp.Add(1)
 	for i := 0; i < 50; i++ {
 		go func() {
-			for i := 0; i < 100000; i++ {
+			for j := 0; j < 50000; j++ {
+				newWorkerPool.SendTaskWithContext(context.Background(), printJob)
+			}
+		}()
+	}
+	printJob.TaskTimeOut = 120
+	for i := 0; i < 10; i++ {
+		go func() {
+			for j := 0; j < 50000; j++ {
 				newWorkerPool.SendTaskWithContext(context.Background(), printJob)
 			}
 		}()

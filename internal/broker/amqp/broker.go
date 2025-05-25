@@ -112,23 +112,24 @@ func (b *AMQPBroker) processDelivery(ctx context.Context, amqpMsg amqp.Delivery,
 	return nil
 }
 
-// Publish sends a task to the AMQP broker
+// Publish sends a task to the AMQP broker.
+// If the Signature contains RawArgs, it publishes only RawArgs as the message body,
+// and encodes metadata in AMQP headers. Otherwise, it publishes the entire Signature as JSON.
 func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) error {
-
-	taskJSON, err := json.Marshal(signature)
+	body, headers, err := b.prepareMessageBodyAndHeaders(signature)
 	if err != nil {
-		return fmt.Errorf("JSON marshal error: %s", err)
+		return err
 	}
 
 	amqpPublishMessage := amqp.Publishing{
 		ContentType:  "application/json",
 		Priority:     signature.Priority,
-		Body:         taskJSON,
+		Body:         body,
 		DeliveryMode: amqp.Persistent,
+		Headers:      headers,
 	}
 
 	delayMs := b.getTaskTTL(signature)
-	// Set the routing key if not specified
 	if delayMs > 0 {
 		amqpPublishMessage.Expiration = fmt.Sprint(delayMs)
 	} else if signature.RoutingKey == "" {
@@ -136,6 +137,51 @@ func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) e
 	}
 
 	return b.amqpProvider.AmqpPublishWithConfirm(ctx, signature.RoutingKey, amqpPublishMessage, b.getExchangeName())
+}
+
+// prepareMessageBodyAndHeaders returns the AMQP message body and headers.
+// If RawArgs is set on the Signature, RawArgs is used as the body and other metadata
+// is encoded into headers. Otherwise, the entire Signature is marshaled into the body.
+func (b *AMQPBroker) prepareMessageBodyAndHeaders(signature *schema.Signature) ([]byte, amqp.Table, error) {
+	var body []byte
+	var err error
+	headers := amqp.Table{}
+
+	if len(signature.RawArgs) > 0 {
+		body = signature.RawArgs
+		headers = buildHeadersFromSignature(signature)
+	} else {
+		body, err = json.Marshal(signature)
+		if err != nil {
+			return nil, nil, fmt.Errorf("JSON marshal error: %w", err)
+		}
+	}
+
+	return body, headers, nil
+}
+
+// buildHeadersFromSignature converts task metadata fields from the Signature
+// into AMQP headers. Used when publishing RawArgs-only messages.
+func buildHeadersFromSignature(sig *schema.Signature) amqp.Table {
+	headers := amqp.Table{
+		"uuid":                   sig.UUID,
+		"task_name":              sig.Name,
+		"retry_count":            sig.RetryCount,
+		"retry_timeout":          sig.RetryTimeout,
+		"timeout":                sig.TaskTimeOut,
+		"wait_time":              sig.WaitTime,
+		"retries_done":           sig.RetriesDone,
+		"ignore_if_unregistered": sig.IgnoreWhenTaskNotRegistered,
+	}
+
+	if sig.CreatedAt != nil {
+		headers["created_at"] = sig.CreatedAt.Unix()
+	}
+	if sig.ETA != nil {
+		headers["eta"] = sig.ETA.Unix()
+	}
+
+	return headers
 }
 
 // setupExchangeQueueBinding sets up the exchange, queue, and binding

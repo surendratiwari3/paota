@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/schema"
@@ -34,6 +35,7 @@ func main() {
 			BindingKey:         "paota_task_binding_key",
 			PrefetchCount:      100,
 			ConnectionPoolSize: 10,
+			TimeoutQueue:       "timeout_queue",
 			DelayedQueue:       "delay_test",
 		},
 	}
@@ -111,7 +113,7 @@ func (wp printWorker) Publish() {
 }
 
 func (wp printWorker) Print(arg *schema.Signature) error {
-	logger.ApplicationLogger.Info("success")
-	wp.Publish()
-	return nil
+	logger.ApplicationLogger.Info("success", arg.RawArgs)
+	//wp.Publish()
+	return errors.ErrUnsupported
 }

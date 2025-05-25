@@ -39,6 +39,7 @@ type Signature struct {
 	UUID                        string
 	Name                        string
 	Args                        []Arg
+	RawArgs                     json.RawMessage
 	RoutingKey                  string
 	Priority                    uint8
 	RetryCount                  int
