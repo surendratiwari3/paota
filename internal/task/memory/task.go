@@ -92,19 +92,40 @@ func (r *DefaultTaskRegistrar) Processor(job interface{}) error {
 }
 
 func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
-	if amqpJob, ok := job.(amqp.Delivery); !ok {
+	amqpJob, ok := job.(amqp.Delivery)
+	if !ok {
 		return errors.ErrUnsupported
-	} else if len(amqpJob.Body) == 0 {
+	}
+
+	if len(amqpJob.Body) == 0 {
 		logger.ApplicationLogger.Error("empty message, return")
 		_ = amqpJob.Nack(false, false)
 		return appError.ErrEmptyMessage
-	} else if signature, err := schema.BytesToSignature(amqpJob.Body); err != nil {
-		logger.ApplicationLogger.Error("decode error in message, return")
-		_ = amqpJob.Nack(false, false)
-		return err
-	} else {
-		return r.amqpProcessSignature(amqpJob, signature)
 	}
+
+	var signature *schema.Signature
+	var err error
+
+	// Detect new-style message: metadata in headers
+	if _, ok := amqpJob.Headers["task_name"]; ok {
+		// Rebuild Signature from headers + RawArgs
+		signature, err = r.SignatureFromAmqpHeadersAndBody(amqpJob.Headers, amqpJob.Body)
+		if err != nil {
+			logger.ApplicationLogger.Error("failed to build signature from headers and body", err)
+			_ = amqpJob.Nack(false, false)
+			return err
+		}
+	} else {
+		// Fallback: full Signature in body
+		signature, err = schema.BytesToSignature(amqpJob.Body)
+		if err != nil {
+			logger.ApplicationLogger.Error("decode error in message, return")
+			_ = amqpJob.Nack(false, false)
+			return err
+		}
+	}
+
+	return r.amqpProcessSignature(amqpJob, signature)
 }
 
 func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signature *schema.Signature) error {
@@ -209,4 +230,31 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 		return fmt.Errorf("Publish message error: %s", err)
 	}
 	return nil
+}
+
+func (r *DefaultTaskRegistrar) SignatureFromAmqpHeadersAndBody(headers amqp.Table, body []byte) (*schema.Signature, error) {
+	s := &schema.Signature{
+		Name:                        utils.GetString(headers["task_name"]),
+		UUID:                        utils.GetString(headers["uuid"]),
+		RawArgs:                     body,
+		RoutingKey:                  utils.GetString(headers["routing_key"]),
+		Priority:                    utils.GetUInt8(headers["priority"]),
+		RetryCount:                  utils.GetInt(headers["retry_count"]),
+		RetryTimeout:                utils.GetInt(headers["retry_timeout"]),
+		WaitTime:                    utils.GetInt(headers["wait_time"]),
+		RetriesDone:                 utils.GetInt(headers["retries_done"]),
+		TaskTimeOut:                 utils.GetInt(headers["timeout"]),
+		IgnoreWhenTaskNotRegistered: utils.GetBool(headers["ignore_if_unregistered"]),
+	}
+
+	if createdAtUnix, ok := utils.GetInt64Ok(headers["created_at"]); ok {
+		t := time.Unix(createdAtUnix, 0).UTC() // parse as UTC
+		s.CreatedAt = &t
+	}
+	if etaUnix, ok := utils.GetInt64Ok(headers["eta"]); ok {
+		t := time.Unix(etaUnix, 0).UTC() // parse as UTC
+		s.ETA = &t
+	}
+
+	return s, nil
 }
