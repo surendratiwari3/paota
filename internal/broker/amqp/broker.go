@@ -244,26 +244,29 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 		return err
 	}
 
-	// Bind Queue and Bind
-	err = b.amqpProvider.DeclareQueue(channel, b.getFailedQueue(), declareQueueArgs)
-	if err != nil {
-		return err
+	if fq := b.getFailedQueue(); fq != "" {
+		// Bind Queue and Bind
+		err = b.amqpProvider.DeclareQueue(channel, fq, declareQueueArgs)
+		if err != nil {
+			return err
+		}
+		err = b.amqpProvider.QueueExchangeBind(channel, fq, fq, b.config.AMQP.Exchange)
+		if err != nil {
+			return err
+		}
 	}
 
-	err = b.amqpProvider.QueueExchangeBind(channel, b.getFailedQueue(), b.getFailedQueue(), b.config.AMQP.Exchange)
-	if err != nil {
-		return err
-	}
-
-	// Bind Timeout Queue and Bind
-	err = b.amqpProvider.DeclareQueue(channel, b.getTimeoutQueue(), declareQueueArgs)
-	if err != nil {
-		return err
-	}
-
-	err = b.amqpProvider.QueueExchangeBind(channel, b.getTimeoutQueue(), b.getTimeoutQueue(), b.config.AMQP.Exchange)
-	if err != nil {
-		return err
+	
+	if tq := b.getTimeoutQueue(); tq != "" {
+		// Bind Timeout Queue and Bind
+		err = b.amqpProvider.DeclareQueue(channel, tq, declareQueueArgs)
+		if err != nil {
+			return err
+		}
+		err = b.amqpProvider.QueueExchangeBind(channel, tq, tq, b.config.AMQP.Exchange)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
