@@ -147,7 +147,7 @@ func (b *AMQPBroker) prepareMessageBodyAndHeaders(signature *schema.Signature) (
 	var err error
 	headers := amqp.Table{}
 
-	if len(signature.RawArgs) > 0 {
+	if len(signature.RawArgs) > 0 && string(signature.RawArgs) != "null" {
 		body = signature.RawArgs
 		headers = buildHeadersFromSignature(signature)
 	} else {
