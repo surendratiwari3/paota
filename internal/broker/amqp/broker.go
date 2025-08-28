@@ -245,8 +245,9 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	}
 
 	if fq := b.getFailedQueue(); fq != "" {
+		declareFailedQueueArgs := amqp.Table{}
 		// Bind Queue and Bind
-		err = b.amqpProvider.DeclareQueue(channel, fq, declareQueueArgs)
+		err = b.amqpProvider.DeclareQueue(channel, fq, declareFailedQueueArgs)
 		if err != nil {
 			return err
 		}
@@ -258,8 +259,9 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 
 	
 	if tq := b.getTimeoutQueue(); tq != "" {
+		declareTimeoutQueueArgs := amqp.Table{}
 		// Bind Timeout Queue and Bind
-		err = b.amqpProvider.DeclareQueue(channel, tq, declareQueueArgs)
+		err = b.amqpProvider.DeclareQueue(channel, tq, declareTimeoutQueueArgs)
 		if err != nil {
 			return err
 		}
