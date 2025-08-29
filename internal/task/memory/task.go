@@ -190,6 +190,7 @@ func (r *DefaultTaskRegistrar) pushToTimeoutAmqpQueue(signature *schema.Signatur
 		// nothing to do if timeout queue not configured
 		return nil
 	}
+	signature.TaskTimeOut = 0 //this will help to ensure task should not get timeout while processing it from timeout queue
 	signature.RoutingKey = tq
 	return r.SendTask(signature)
 }
