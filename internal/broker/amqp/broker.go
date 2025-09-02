@@ -213,8 +213,8 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-
-	declareQueueArgs := amqp.Table{}
+	
+	declareQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
 
 	// Declare the task queue
 	err = b.amqpProvider.DeclareQueue(channel, b.getTaskQueue(), declareQueueArgs)
@@ -245,7 +245,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	}
 
 	if fq := b.getFailedQueue(); fq != "" {
-		declareFailedQueueArgs := amqp.Table{}
+		declareFailedQueueArgs := amqp.Table{b.config.AMQP.QueueDeclareArgs}
 		// Bind Queue and Bind
 		err = b.amqpProvider.DeclareQueue(channel, fq, declareFailedQueueArgs)
 		if err != nil {
@@ -259,7 +259,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 
 	
 	if tq := b.getTimeoutQueue(); tq != "" {
-		declareTimeoutQueueArgs := amqp.Table{}
+		declareTimeoutQueueArgs := amqp.Table{b.config.AMQP.QueueDeclareArgs}
 		// Bind Timeout Queue and Bind
 		err = b.amqpProvider.DeclareQueue(channel, tq, declareTimeoutQueueArgs)
 		if err != nil {
