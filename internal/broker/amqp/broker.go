@@ -381,12 +381,21 @@ func (b *AMQPBroker) getTaskQueue() string {
 }
 
 func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
-	var delayMs int64
-	if task.ETA != nil {
-		now := time.Now().UTC()
-		if task.ETA.After(now) {
-			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
-		}
+	// If ETA is not defined, no delay
+	if task.ETA == nil {
+		return 0
 	}
-	return delayMs
+
+	// If ETA is defined, check priority + timeout + createdAt
+	if task.Priority > 1 && task.TaskTimeout != 0 && task.CreatedAt != nil {
+		return 5 //send 5 milisecond
+	}
+
+	// Otherwise calculate delay based on ETA
+	now := time.Now().UTC()
+	if task.ETA.After(now) {
+		return int64(task.ETA.Sub(now) / time.Millisecond)
+	}
+
+	return 0
 }
