@@ -386,9 +386,9 @@ func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
 		return 0
 	}
 
-	// If ETA is defined, check priority + timeout + createdAt
-	if task.Priority > 1 && task.TaskTimeout != 0 && task.CreatedAt != nil {
-		return 5 //send 5 milisecond
+	// If ETA is defined, check priority + TaskTimeOut + CreatedAt
+	if task.Priority > 1 && task.TaskTimeOut != 0 && task.CreatedAt != nil {
+		return 5 // send 5 milliseconds
 	}
 
 	// Otherwise calculate delay based on ETA
