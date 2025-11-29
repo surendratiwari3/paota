@@ -147,7 +147,7 @@ func (b *AMQPBroker) prepareMessageBodyAndHeaders(signature *schema.Signature) (
 	var err error
 	headers := amqp.Table{}
 
-	if len(signature.RawArgs) > 0 {
+	if len(signature.RawArgs) > 0 && string(signature.RawArgs) != "null" {
 		body = signature.RawArgs
 		headers = buildHeadersFromSignature(signature)
 	} else {
@@ -213,8 +213,8 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-
-	declareQueueArgs := amqp.Table{}
+	
+	declareQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
 
 	// Declare the task queue
 	err = b.amqpProvider.DeclareQueue(channel, b.getTaskQueue(), declareQueueArgs)
@@ -244,26 +244,31 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 		return err
 	}
 
-	// Bind Queue and Bind
-	err = b.amqpProvider.DeclareQueue(channel, b.getFailedQueue(), declareQueueArgs)
-	if err != nil {
-		return err
+	if fq := b.getFailedQueue(); fq != "" {
+		declareFailedQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
+		// Bind Queue and Bind
+		err = b.amqpProvider.DeclareQueue(channel, fq, declareFailedQueueArgs)
+		if err != nil {
+			return err
+		}
+		err = b.amqpProvider.QueueExchangeBind(channel, fq, fq, b.config.AMQP.Exchange)
+		if err != nil {
+			return err
+		}
 	}
 
-	err = b.amqpProvider.QueueExchangeBind(channel, b.getFailedQueue(), b.getFailedQueue(), b.config.AMQP.Exchange)
-	if err != nil {
-		return err
-	}
-
-	// Bind Timeout Queue and Bind
-	err = b.amqpProvider.DeclareQueue(channel, b.getTimeoutQueue(), declareQueueArgs)
-	if err != nil {
-		return err
-	}
-
-	err = b.amqpProvider.QueueExchangeBind(channel, b.getTimeoutQueue(), b.getTimeoutQueue(), b.config.AMQP.Exchange)
-	if err != nil {
-		return err
+	
+	if tq := b.getTimeoutQueue(); tq != "" {
+		declareTimeoutQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
+		// Bind Timeout Queue and Bind
+		err = b.amqpProvider.DeclareQueue(channel, tq, declareTimeoutQueueArgs)
+		if err != nil {
+			return err
+		}
+		err = b.amqpProvider.QueueExchangeBind(channel, tq, tq, b.config.AMQP.Exchange)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -376,12 +381,21 @@ func (b *AMQPBroker) getTaskQueue() string {
 }
 
 func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
-	var delayMs int64
-	if task.ETA != nil {
-		now := time.Now().UTC()
-		if task.ETA.After(now) {
-			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
-		}
+	// If ETA is not defined, no delay
+	if task.ETA == nil {
+		return 0
 	}
-	return delayMs
+
+	// If ETA is defined, check priority + TaskTimeOut + CreatedAt
+	if task.Priority > 1 && task.TaskTimeOut != 0 && task.CreatedAt != nil {
+		return 5 // send 5 milliseconds
+	}
+
+	// Otherwise calculate delay based on ETA
+	now := time.Now().UTC()
+	if task.ETA.After(now) {
+		return int64(task.ETA.Sub(now) / time.Millisecond)
+	}
+
+	return 0
 }

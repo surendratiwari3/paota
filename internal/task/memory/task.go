@@ -185,26 +185,41 @@ func (r *DefaultTaskRegistrar) checkTaskTimeout(signature *schema.Signature) boo
 }
 
 func (r *DefaultTaskRegistrar) pushToTimeoutAmqpQueue(signature *schema.Signature) error {
-	signature.RoutingKey = r.configProvider.GetConfig().AMQP.TimeoutQueue
+	tq := r.configProvider.GetConfig().AMQP.TimeoutQueue
+	if tq == "" {
+		// nothing to do if timeout queue not configured
+		return nil
+	}
+	signature.TaskTimeOut = 0 //this will help to ensure task should not get timeout while processing it from timeout queue
+	signature.RoutingKey = tq
 	return r.SendTask(signature)
 }
 
 func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
-	if signature.RetryCount < 1 {
-		signature.RoutingKey = r.configProvider.GetConfig().AMQP.FailedQueue
-	} else if signature.RetriesDone > (signature.RetryCount - 1) {
-		signature.RoutingKey = r.configProvider.GetConfig().AMQP.FailedQueue
-	} else {
-		retryInterval := r.getRetryInterval(signature.RetriesDone + 1)
-		if retryInterval > 0 {
-			signature.RetriesDone = signature.RetriesDone + 1
-			signature.RoutingKey = r.configProvider.GetConfig().AMQP.DelayedQueue
+	cfg := r.configProvider.GetConfig().AMQP
+
+	// Case 1: No retries configured or exhausted
+	if signature.RetryCount < 1 || signature.RetriesDone > (signature.RetryCount-1) {
+		if cfg.FailedQueue == "" {
+			// No failed queue configured, just skip
+			// You can either log a warning or return an error here
+			return nil
 		}
+		signature.RoutingKey = cfg.FailedQueue
+		return r.SendTask(signature)
+	}
+
+	// Case 2: Retry allowed
+	retryInterval := r.getRetryInterval(signature.RetriesDone + 1)
+	if retryInterval > 0 {
+		signature.RetriesDone++
+		signature.RoutingKey = cfg.DelayedQueue
 		eta := time.Now().UTC().Add(retryInterval)
 		signature.ETA = &eta
 	}
 	return r.SendTask(signature)
 }
+
 
 func (r *DefaultTaskRegistrar) getRetryInterval(retryCount int) time.Duration {
 	return time.Duration(utils.Fibonacci(retryCount)) * time.Second
