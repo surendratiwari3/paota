@@ -98,6 +98,7 @@ func NewAMQPBroker(configProvider config.ConfigProvider) (broker.Broker, error) 
 }
 
 func (b *AMQPBroker) processDelivery(ctx context.Context, amqpMsg amqp.Delivery, workerGroup workergroup.WorkerGroupInterface) error {
+	defer b.processingWG.Done()
 	if len(amqpMsg.Body) == 0 {
 		logger.ApplicationLogger.Error("empty message, return")
 		err := amqpMsg.Nack(false, false)
@@ -108,7 +109,6 @@ func (b *AMQPBroker) processDelivery(ctx context.Context, amqpMsg amqp.Delivery,
 	}
 
 	workerGroup.AssignJob(amqpMsg)
-	b.processingWG.Done()
 	return nil
 }
 
@@ -213,7 +213,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-	
+
 	declareQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
 
 	// Declare the task queue
@@ -257,7 +257,6 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 		}
 	}
 
-	
 	if tq := b.getTimeoutQueue(); tq != "" {
 		declareTimeoutQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
 		// Bind Timeout Queue and Bind
@@ -277,6 +276,7 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 // StopConsumer stops the AMQP consumer
 func (b *AMQPBroker) StopConsumer() {
 	b.stopChannel <- struct{}{}
+	b.processingWG.Wait()
 	<-b.doneStopChannel
 }
 
@@ -324,6 +324,9 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 
 	errorsChan := make(chan error, 1)
 	amqpErrorChannel := b.amqpErrorChannel
+	connClosed := conn.NotifyClose(make(chan *amqp.Error, 1))
+	chClosed := channel.NotifyClose(make(chan *amqp.Error, 1))
+
 	for {
 		select {
 		case amqpErr := <-amqpErrorChannel:
@@ -332,11 +335,22 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 		case err := <-errorsChan:
 			logger.ApplicationLogger.Error("error in consumer, exit", err)
 			return err
-		case d := <-deliveries:
+		case err := <-connClosed:
+			logger.ApplicationLogger.Error("AMQP connection closed — RabbitMQ restarted:", err)
+			return err
+		case err := <-chClosed:
+			logger.ApplicationLogger.Error("AMQP channel closed — RabbitMQ restarted:", err)
+			return err
+		case d, ok := <-deliveries:
+			if !ok {
+				logger.ApplicationLogger.Error("deliveries channel closed, exiting consumer loop")
+				return nil
+			}
 			b.processingWG.Add(1)
 			err := b.processDelivery(ctx, d, workerGroup)
 			if err != nil {
 				logger.ApplicationLogger.Warning("delivery in error, continue")
+				return err
 			}
 		case <-b.stopChannel:
 			b.doneStopChannel <- struct{}{}
@@ -344,8 +358,6 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 			return nil
 		}
 	}
-	b.processingWG.Wait()
-	return nil
 }
 
 func (b *AMQPBroker) getDelayedQueue() string {

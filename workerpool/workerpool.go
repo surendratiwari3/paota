@@ -12,13 +12,12 @@ import (
 	"github.com/surendratiwari3/paota/internal/task"
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
+	"time"
 
 	"github.com/surendratiwari3/paota/internal/workergroup"
 	"os"
 	"os/signal"
 	"reflect"
-
-	"sync"
 )
 
 // WorkerPool stores all configuration for tasks workers
@@ -165,15 +164,24 @@ func (wp *WorkerPool) Start() error {
 
 	wp.workerGroup.Start()
 
-	var signalWG sync.WaitGroup
 	go func() {
 		for {
 			err := wp.broker.StartConsumer(context.Background(), wp.workerGroup)
+
 			if err != nil {
-				logger.ApplicationLogger.Error("consumer failed to start", err)
+				logger.ApplicationLogger.Error("consumer exited:", err)
+			}
+
+			// Check if the pool is stopping
+			if !wp.started {
+				logger.ApplicationLogger.Info("worker pool stopping, consumer goroutine exiting")
 				return
 			}
-			signalWG.Wait()
+
+			// RabbitMQ died → sleep & retry
+			logger.ApplicationLogger.Warning("RabbitMQ disconnected, retrying in 3 seconds...")
+			time.Sleep(3 * time.Second)
+			//signalWG.Wait()
 		}
 	}()
 
