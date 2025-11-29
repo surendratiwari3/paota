@@ -64,8 +64,8 @@ func (b *AMQPBroker) isDirectExchange() bool {
 // NewAMQPBroker creates a new instance of the AMQP broker
 // It opens connections to RabbitMQ, declares an exchange, opens a channel,
 // declares and binds the queue, and enables publish notifications
-func NewAMQPBroker() (broker.Broker, error) {
-	cfg := config.GetConfigProvider().GetConfig()
+func NewAMQPBroker(configProvider config.ConfigProvider) (broker.Broker, error) {
+	cfg := configProvider.GetConfig()
 	amqpErrorChannel := make(chan *amqp.Error, 1)
 	stopChannel := make(chan struct{})
 	doneStopChannel := make(chan struct{})
@@ -112,23 +112,24 @@ func (b *AMQPBroker) processDelivery(ctx context.Context, amqpMsg amqp.Delivery,
 	return nil
 }
 
-// Publish sends a task to the AMQP broker
+// Publish sends a task to the AMQP broker.
+// If the Signature contains RawArgs, it publishes only RawArgs as the message body,
+// and encodes metadata in AMQP headers. Otherwise, it publishes the entire Signature as JSON.
 func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) error {
-
-	taskJSON, err := json.Marshal(signature)
+	body, headers, err := b.prepareMessageBodyAndHeaders(signature)
 	if err != nil {
-		return fmt.Errorf("JSON marshal error: %s", err)
+		return err
 	}
 
 	amqpPublishMessage := amqp.Publishing{
 		ContentType:  "application/json",
 		Priority:     signature.Priority,
-		Body:         taskJSON,
+		Body:         body,
 		DeliveryMode: amqp.Persistent,
+		Headers:      headers,
 	}
 
 	delayMs := b.getTaskTTL(signature)
-	// Set the routing key if not specified
 	if delayMs > 0 {
 		amqpPublishMessage.Expiration = fmt.Sprint(delayMs)
 	} else if signature.RoutingKey == "" {
@@ -136,6 +137,51 @@ func (b *AMQPBroker) Publish(ctx context.Context, signature *schema.Signature) e
 	}
 
 	return b.amqpProvider.AmqpPublishWithConfirm(ctx, signature.RoutingKey, amqpPublishMessage, b.getExchangeName())
+}
+
+// prepareMessageBodyAndHeaders returns the AMQP message body and headers.
+// If RawArgs is set on the Signature, RawArgs is used as the body and other metadata
+// is encoded into headers. Otherwise, the entire Signature is marshaled into the body.
+func (b *AMQPBroker) prepareMessageBodyAndHeaders(signature *schema.Signature) ([]byte, amqp.Table, error) {
+	var body []byte
+	var err error
+	headers := amqp.Table{}
+
+	if len(signature.RawArgs) > 0 && string(signature.RawArgs) != "null" {
+		body = signature.RawArgs
+		headers = buildHeadersFromSignature(signature)
+	} else {
+		body, err = json.Marshal(signature)
+		if err != nil {
+			return nil, nil, fmt.Errorf("JSON marshal error: %w", err)
+		}
+	}
+
+	return body, headers, nil
+}
+
+// buildHeadersFromSignature converts task metadata fields from the Signature
+// into AMQP headers. Used when publishing RawArgs-only messages.
+func buildHeadersFromSignature(sig *schema.Signature) amqp.Table {
+	headers := amqp.Table{
+		"uuid":                   sig.UUID,
+		"task_name":              sig.Name,
+		"retry_count":            sig.RetryCount,
+		"retry_timeout":          sig.RetryTimeout,
+		"timeout":                sig.TaskTimeOut,
+		"wait_time":              sig.WaitTime,
+		"retries_done":           sig.RetriesDone,
+		"ignore_if_unregistered": sig.IgnoreWhenTaskNotRegistered,
+	}
+
+	if sig.CreatedAt != nil {
+		headers["created_at"] = sig.CreatedAt.Unix()
+	}
+	if sig.ETA != nil {
+		headers["eta"] = sig.ETA.Unix()
+	}
+
+	return headers
 }
 
 // setupExchangeQueueBinding sets up the exchange, queue, and binding
@@ -167,8 +213,8 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-
-	declareQueueArgs := amqp.Table{}
+	
+	declareQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
 
 	// Declare the task queue
 	err = b.amqpProvider.DeclareQueue(channel, b.getTaskQueue(), declareQueueArgs)
@@ -187,7 +233,6 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	if err != nil {
 		return err
 	}
-
 	// Bind the queue to the exchange
 	err = b.amqpProvider.QueueExchangeBind(channel, b.getTaskQueue(), b.config.AMQP.BindingKey, b.config.AMQP.Exchange)
 	if err != nil {
@@ -197,6 +242,33 @@ func (b *AMQPBroker) setupExchangeQueueBinding() error {
 	err = b.amqpProvider.QueueExchangeBind(channel, b.getDelayedQueue(), b.getDelayedQueue(), b.getDelayedQueueDLX())
 	if err != nil {
 		return err
+	}
+
+	if fq := b.getFailedQueue(); fq != "" {
+		declareFailedQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
+		// Bind Queue and Bind
+		err = b.amqpProvider.DeclareQueue(channel, fq, declareFailedQueueArgs)
+		if err != nil {
+			return err
+		}
+		err = b.amqpProvider.QueueExchangeBind(channel, fq, fq, b.config.AMQP.Exchange)
+		if err != nil {
+			return err
+		}
+	}
+
+	
+	if tq := b.getTimeoutQueue(); tq != "" {
+		declareTimeoutQueueArgs := amqp.Table(b.config.AMQP.QueueDeclareArgs)
+		// Bind Timeout Queue and Bind
+		err = b.amqpProvider.DeclareQueue(channel, tq, declareTimeoutQueueArgs)
+		if err != nil {
+			return err
+		}
+		err = b.amqpProvider.QueueExchangeBind(channel, tq, tq, b.config.AMQP.Exchange)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -280,6 +352,14 @@ func (b *AMQPBroker) getDelayedQueue() string {
 	return b.config.AMQP.DelayedQueue
 }
 
+func (b *AMQPBroker) getFailedQueue() string {
+	return b.config.AMQP.FailedQueue
+}
+
+func (b *AMQPBroker) getTimeoutQueue() string {
+	return b.config.AMQP.TimeoutQueue
+}
+
 func (b *AMQPBroker) getQueuePrefetchCount() int {
 	return b.config.AMQP.PrefetchCount
 }
@@ -301,12 +381,21 @@ func (b *AMQPBroker) getTaskQueue() string {
 }
 
 func (b *AMQPBroker) getTaskTTL(task *schema.Signature) int64 {
-	var delayMs int64
-	if task.ETA != nil {
-		now := time.Now().UTC()
-		if task.ETA.After(now) {
-			delayMs = int64(task.ETA.Sub(now) / time.Millisecond)
-		}
+	// If ETA is not defined, no delay
+	if task.ETA == nil {
+		return 0
 	}
-	return delayMs
+
+	// If ETA is defined, check priority + TaskTimeOut + CreatedAt
+	if task.Priority > 1 && task.TaskTimeOut != 0 && task.CreatedAt != nil {
+		return 5 // send 5 milliseconds
+	}
+
+	// Otherwise calculate delay based on ETA
+	now := time.Now().UTC()
+	if task.ETA.After(now) {
+		return int64(task.ETA.Sub(now) / time.Millisecond)
+	}
+
+	return 0
 }

@@ -14,18 +14,15 @@ import (
 	"os"
 )
 
-// UserRecord represents the structure of user records.
-type UserRecord struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	// Add other fields as needed
+type printWorker struct {
+	workerPool workerpool.Pool
 }
 
 func main() {
-
 	logrusLog := logrus.StandardLogger()
 	logrusLog.SetFormatter(&logrus.JSONFormatter{})
+	logrusLog.SetReportCaller(true)
+
 	logger.ApplicationLogger = logrusLog
 
 	cnf := config.Config{
@@ -33,13 +30,13 @@ func main() {
 		//Store:         "null",
 		TaskQueueName: "paota_task_queue",
 		AMQP: &config.AMQPConfig{
-			Url:                "amqp://localhost:5672/", //replace it with your amqp url
+			Url:                "amqp://localhost:5672/",
 			Exchange:           "paota_task_exchange",
 			ExchangeType:       "direct",
-			BindingKey:         "paota_task_binding_key",
+			BindingKey:         "consumer_publisher",
 			PrefetchCount:      100,
 			ConnectionPoolSize: 10,
-			DelayedQueue:       "delay_test",
+			DelayedQueue:       "delay_consumer_publisher",
 		},
 	}
 
@@ -51,8 +48,35 @@ func main() {
 		logger.ApplicationLogger.Info("workerPool is nil")
 		os.Exit(0)
 	}
-	logger.ApplicationLogger.Info("newWorkerPool created successfully")
 
+	printWorker := printWorker{workerPool: newWorkerPool}
+
+	logger.ApplicationLogger.Info("newWorkerPool created successfully")
+	// Register tasks
+	regTasks := map[string]interface{}{
+		"Print": printWorker.Print,
+	}
+	err = newWorkerPool.RegisterTasks(regTasks)
+	if err != nil {
+		logger.ApplicationLogger.Info("error while registering task")
+		return
+	}
+	logger.ApplicationLogger.Info("Worker is also started")
+
+	err = newWorkerPool.Start()
+	if err != nil {
+		logger.ApplicationLogger.Error("error while starting worker")
+	}
+}
+
+func (wp printWorker) Publish() {
+	// UserRecord represents the structure of user records.
+	type UserRecord struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Email string `json:"email"`
+		// Add other fields as needed
+	}
 	// Replace this with the received user record
 	user := UserRecord{
 		ID:    "1",
@@ -67,30 +91,31 @@ func main() {
 	}
 
 	printJob := &schema.Signature{
-		Name:                        "Print",
-		RawArgs:                     userJSON,
-		TaskTimeOut:                 100,
+		Name: "Print",
+		Args: []schema.Arg{
+			{
+				Type:  "string",
+				Value: string(userJSON),
+			},
+		},
 		RetryCount:                  10,
+		RoutingKey:                  "consumer_publisher_",
 		IgnoreWhenTaskNotRegistered: true,
 	}
 
 	waitGrp := sync.WaitGroup{}
 	waitGrp.Add(1)
-	for i := 0; i < 50; i++ {
-		go func() {
-			for j := 0; j < 50000; j++ {
-				newWorkerPool.SendTaskWithContext(context.Background(), printJob)
-			}
-		}()
-	}
-	printJob.TaskTimeOut = 120
-	for i := 0; i < 10; i++ {
-		go func() {
-			for j := 0; j < 50000; j++ {
-				newWorkerPool.SendTaskWithContext(context.Background(), printJob)
-			}
-		}()
-	}
-
+	go func() {
+		for i := 0; i < 100; i++ {
+			wp.workerPool.SendTaskWithContext(context.Background(), printJob)
+		}
+		waitGrp.Done()
+	}()
 	waitGrp.Wait()
+}
+
+func (wp printWorker) Print(arg *schema.Signature) error {
+	logger.ApplicationLogger.Info("success")
+	wp.Publish()
+	return nil
 }
