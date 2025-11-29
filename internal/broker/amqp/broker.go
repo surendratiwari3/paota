@@ -344,12 +344,12 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 		case d, ok := <-deliveries:
 			if !ok {
 				logger.ApplicationLogger.Error("deliveries channel closed, exiting consumer loop")
-				return nil
+				return errors.ErrEmptyMessage
 			}
 			b.processingWG.Add(1)
 			err := b.processDelivery(ctx, d, workerGroup)
 			if err != nil {
-				logger.ApplicationLogger.Warning("delivery in error, continue")
+				logger.ApplicationLogger.Warning("delivery in error")
 				return err
 			}
 		case <-b.stopChannel:
