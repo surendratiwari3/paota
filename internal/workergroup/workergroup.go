@@ -64,7 +64,7 @@ func (wg *workerGroup) work(wrk *worker) {
 	for job := range wrk.JobChannel {
 		err := wg.TaskRegistrar.Processor(job)
 		if err != nil {
-			logger.ApplicationLogger.Error("error while executing task")
+			logger.ApplicationLogger.Error("error while executing task - ", err)
 		}
 	}
 }

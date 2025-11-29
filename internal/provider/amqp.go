@@ -6,6 +6,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/schema/errors"
+	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -117,6 +118,19 @@ func (ap *amqpProvider) AmqpPublish(ctx context.Context, channel *amqp.Channel, 
 	return err
 }
 
+func (ap *amqpProvider) DiscardConnection(conn interface{}) error {
+	ap.connectionsMutex.Lock()
+	defer ap.connectionsMutex.Unlock()
+
+	// actually close it
+	if c, ok := conn.(*amqp.Connection); ok {
+		_ = c.Close()
+	}
+
+	// do not return to pool → it gets dropped
+	return nil
+}
+
 func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey string, amqpMsg amqp.Publishing, exchangeName string) error {
 
 	// Get a connection from the pool
@@ -124,45 +138,59 @@ func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey s
 	if err != nil {
 		return err
 	}
-	defer func(amqpProvider AmqpProviderInterface, i interface{}) {
-		err := ap.ReleaseConnectionToPool(i)
-		if err != nil {
-			//TODO:error handling
-		}
-	}(ap, conn)
 
-	// Create a channel
+	// Track if connection should be discarded
+	publishHadError := false
+
+	// Return connection or discard it depending on result
+	defer func() {
+		if publishHadError {
+			_ = ap.DiscardConnection(conn) // REMOVE bad connection from pool
+		} else {
+			_ = ap.ReleaseConnectionToPool(conn) // Return good connection to pool
+		}
+	}()
+
+	// Create channel with confirms enabled
 	channel, confirmChan, err := ap.CreateAmqpChannel(conn, true)
 	if err != nil {
+		publishHadError = true
 		return err
 	}
-	defer func(channel *amqp.Channel) {
-		err := ap.CloseAmqpChannel(channel)
-		if err != nil {
-			//TODO:error handling
-		}
-	}(channel)
+	defer ap.CloseAmqpChannel(channel)
 
-	// Publish the message to the exchange
+	// Publish
 	err = channel.PublishWithContext(ctx,
-		exchangeName, // exchange
-		routingKey,   // routing key
-		false,        // mandatory
-		false,        // immediate
+		exchangeName,
+		routingKey,
+		false,
+		false,
 		amqpMsg,
 	)
 
-	// wait for confirm with timeout
+	if err != nil {
+		publishHadError = true
+		return fmt.Errorf("failed to publish: %w", err)
+	}
+
+	// Wait for broker confirm
 	select {
 	case confirmed, ok := <-confirmChan:
 		if !ok {
-			return fmt.Errorf("publish confirm channel closed")
+			publishHadError = true
+			return fmt.Errorf("publish confirm channel closed (connection probably reset)")
 		}
-		if confirmed.Ack {
-			return nil
+
+		if !confirmed.Ack {
+			publishHadError = true
+			return fmt.Errorf("message not acked by broker")
 		}
-		return fmt.Errorf("message not acked by broker")
+
+		// Confirm OK → connection is healthy
+		return nil
+
 	case <-time.After(5 * time.Second):
+		publishHadError = true
 		return fmt.Errorf("publish confirm timeout")
 	}
 }
@@ -259,7 +287,7 @@ func (ap *amqpProvider) CreateConnectionPool() error {
 		if err != nil {
 			// Cleanup previously created connections
 			for _, c := range connPool {
-				if c != nil {
+				if c != nil && !c.IsClosed() {
 					_ = c.Close()
 				}
 			}
@@ -346,7 +374,9 @@ func (ap *amqpProvider) GetConnectionFromPool() (interface{}, error) {
 	defer ap.connectionsMutex.Unlock()
 
 	if ap.ConnectionPool == nil || len(ap.ConnectionPool) == 0 {
-		return nil, errors.ErrConnectionPoolEmpty
+		if err := ap.refillConnectionPool(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Pop first connection
@@ -367,4 +397,41 @@ func (ap *amqpProvider) GetConnectionFromPool() (interface{}, error) {
 
 	// Return healthy connection (not appended)
 	return amqpConn, nil
+}
+
+func (ap *amqpProvider) refillConnectionPool() error {
+	// Create a fresh pool slice
+	poolSize := ap.amqpConf.ConnectionPoolSize
+
+	// Close existing connections (if any)
+	for _, c := range ap.ConnectionPool {
+		if c != nil && !c.IsClosed() {
+			_ = c.Close()
+		}
+	}
+
+	newPool := make([]*amqp.Connection, 0, poolSize)
+
+	for i := 0; i < poolSize; i++ {
+		conn, err := ap.CreateConnection()
+		if err != nil {
+			// Cleanup previously created connections
+			for _, c := range newPool {
+				if c != nil && !c.IsClosed() {
+					_ = c.Close()
+				}
+			}
+			return fmt.Errorf("failed to refill connection pool: %w", err)
+		}
+		newPool = append(newPool, conn)
+		// optional jitter to reduce RabbitMQ load
+		time.Sleep(time.Duration(rand.Intn(15)+5) * time.Millisecond)
+	}
+
+	ap.ConnectionPool = newPool
+	// AFTER pool assignment → start watchers
+	for _, conn := range newPool {
+		ap.watchConnection(conn)
+	}
+	return nil
 }

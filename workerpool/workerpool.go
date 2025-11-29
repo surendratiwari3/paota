@@ -175,13 +175,13 @@ func (wp *WorkerPool) Start() error {
 			// Check if the pool is stopping
 			if !wp.started {
 				logger.ApplicationLogger.Info("worker pool stopping, consumer goroutine exiting")
+				os.Exit(0)
 				return
 			}
 
 			// RabbitMQ died → sleep & retry
 			logger.ApplicationLogger.Warning("RabbitMQ disconnected, retrying in 3 seconds...")
 			time.Sleep(3 * time.Second)
-			//signalWG.Wait()
 		}
 	}()
 
