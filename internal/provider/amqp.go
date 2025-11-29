@@ -5,8 +5,8 @@ import (
 	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/internal/utils"
 	"github.com/surendratiwari3/paota/schema/errors"
-	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -425,8 +425,7 @@ func (ap *amqpProvider) refillConnectionPool() error {
 		}
 		newPool = append(newPool, conn)
 		// optional jitter to reduce RabbitMQ load
-		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-		time.Sleep(time.Duration(rnd.Intn(15)+5) * time.Millisecond)
+		utils.JitterMsecSleep(5, 20) //milisecond
 	}
 
 	ap.ConnectionPool = newPool
