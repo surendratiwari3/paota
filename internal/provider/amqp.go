@@ -2,9 +2,11 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/schema/errors"
+	"net"
 	"sync"
 	"time"
 )
@@ -150,13 +152,19 @@ func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey s
 		amqpMsg,
 	)
 
-	//TODO: need to handle in non-blocking way
-	confirmed := <-confirmChan
-	if confirmed.Ack {
-		return nil
+	// wait for confirm with timeout
+	select {
+	case confirmed, ok := <-confirmChan:
+		if !ok {
+			return fmt.Errorf("publish confirm channel closed")
+		}
+		if confirmed.Ack {
+			return nil
+		}
+		return fmt.Errorf("message not acked by broker")
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("publish confirm timeout")
 	}
-
-	return err
 }
 
 func (ap *amqpProvider) GetAmqpConnection() (*amqp.Connection, error) {
@@ -183,6 +191,7 @@ func (ap *amqpProvider) CloseConnection() error {
 	return nil
 }
 
+/*
 func (ap *amqpProvider) CreateConnection() (*amqp.Connection, error) {
 	if ap.amqpConf == nil {
 		return nil, errors.ErrNilConfig
@@ -197,26 +206,113 @@ func (ap *amqpProvider) CreateConnection() (*amqp.Connection, error) {
 	}
 
 	return conn, nil
+}*/
+
+func (ap *amqpProvider) CreateConnection() (*amqp.Connection, error) {
+	if ap.amqpConf == nil {
+		return nil, errors.ErrNilConfig
+	}
+
+	// Heartbeat (convert seconds → time.Duration)
+	heartbeat := time.Duration(ap.amqpConf.HeartBeatInterval) * time.Second
+	if heartbeat <= 0 {
+		heartbeat = 10 * time.Second
+	}
+
+	// Connection timeout
+	dialTimeout := time.Duration(ap.amqpConf.ConnectionTimeout) * time.Second
+	if dialTimeout <= 0 {
+		dialTimeout = 5 * time.Second
+	}
+
+	// Build AMQP config
+	amqpCfg := amqp.Config{
+		Heartbeat: heartbeat,
+		Locale:    "en_US",
+		Dial: func(network, addr string) (net.Conn, error) {
+			return net.DialTimeout(network, addr, dialTimeout)
+		},
+	}
+
+	// Dial broker
+	conn, err := amqp.DialConfig(ap.amqpConf.Url, amqpCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn, nil
 }
 
-// CreateConnectionPool initializes the connection pool
+// CreateConnectionPool initializes the connection pool safely.
 func (ap *amqpProvider) CreateConnectionPool() error {
 	poolSize := ap.amqpConf.ConnectionPoolSize
-	if poolSize < 2 {
+	if poolSize < 1 {
 		return errors.ErrInvalidConfig
 	}
+
+	// Allocate pool slice
 	connPool := make([]*amqp.Connection, poolSize)
 
+	// Create all connections first (NO watchers here)
 	for i := 0; i < poolSize; i++ {
-		conn, err := ap.CreateConnection()
+		newConn, err := ap.CreateConnection()
 		if err != nil {
-			return err
+			// Cleanup previously created connections
+			for _, c := range connPool {
+				if c != nil {
+					_ = c.Close()
+				}
+			}
+			return fmt.Errorf("CreateConnectionPool failed: %w", err)
 		}
 
-		connPool[i] = conn
+		connPool[i] = newConn
 	}
+
+	// Lock and assign entire pool at once (atomic)
+	ap.connectionsMutex.Lock()
 	ap.ConnectionPool = connPool
+	ap.connectionsMutex.Unlock()
+
+	// AFTER pool assignment → start watchers
+	for _, conn := range connPool {
+		ap.watchConnection(conn)
+	}
+
 	return nil
+}
+
+func (ap *amqpProvider) watchConnection(conn *amqp.Connection) {
+	go func() {
+		err := <-conn.NotifyClose(make(chan *amqp.Error))
+		if err != nil {
+			ap.replaceDeadConnection(conn)
+		}
+	}()
+}
+
+func (ap *amqpProvider) replaceDeadConnection(dead *amqp.Connection) {
+	ap.connectionsMutex.Lock()
+	defer ap.connectionsMutex.Unlock()
+	if ap.ConnectionPool == nil {
+		return
+	}
+	for i, c := range ap.ConnectionPool {
+		if c == nil {
+			continue
+		}
+		if c == dead {
+			newConn, err := ap.CreateConnection()
+			if err != nil {
+				// keeping the dead one, will retry on next get
+				return
+			}
+
+			ap.ConnectionPool[i] = newConn
+			ap.watchConnection(newConn)
+			return
+		}
+	}
 }
 
 // ReleaseConnectionToPool releases a connection back to the pool
@@ -227,12 +323,24 @@ func (ap *amqpProvider) ReleaseConnectionToPool(conn interface{}) error {
 		ap.connectionsMutex.Lock()
 		defer ap.connectionsMutex.Unlock()
 
+		// If dead → create new one and add that instead
+		if amqpConnection == nil || amqpConnection.IsClosed() {
+			newConn, err := ap.CreateConnection()
+			if err != nil {
+				return fmt.Errorf("failed to recreate AMQP connection: %w", err)
+			}
+			ap.watchConnection(amqpConnection)
+			ap.ConnectionPool = append(ap.ConnectionPool, newConn)
+			return nil
+		}
+
 		ap.ConnectionPool = append(ap.ConnectionPool, amqpConnection)
 	}
 	return nil
 }
 
-// GetConnectionFromPool returns a connection from the pool
+// GetConnectionFromPool returns a valid AMQP connection from the pool.
+// It does NOT append it back (ReleaseConnectionToPool will handle that).
 func (ap *amqpProvider) GetConnectionFromPool() (interface{}, error) {
 	ap.connectionsMutex.Lock()
 	defer ap.connectionsMutex.Unlock()
@@ -241,8 +349,22 @@ func (ap *amqpProvider) GetConnectionFromPool() (interface{}, error) {
 		return nil, errors.ErrConnectionPoolEmpty
 	}
 
-	conn := ap.ConnectionPool[0]
+	// Pop first connection
+	amqpConn := ap.ConnectionPool[0]
 	ap.ConnectionPool = ap.ConnectionPool[1:]
 
-	return conn, nil
+	//If connection is closed → create a new one and return it
+	if amqpConn == nil || amqpConn.IsClosed() {
+
+		newAmqpConn, err := ap.CreateConnection()
+		if err != nil {
+			return nil, fmt.Errorf("failed to recreate AMQP connection: %w", err)
+		}
+		ap.watchConnection(newAmqpConn)
+		// DO NOT append here — ReleaseConnectionToPool will manage that
+		return newAmqpConn, nil
+	}
+
+	// Return healthy connection (not appended)
+	return amqpConn, nil
 }

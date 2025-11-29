@@ -20,5 +20,6 @@ type AMQPConfig struct {
 	FailedQueue        string           `env:"FAILED_QUEUE" envDefault:"paota_task_failed_queue"`
 	TimeoutQueue       string           `env:"TIMEOUT_QUEUE" envDefault:"paota_task_failed_queue"`
 	ConnectionPoolSize int              `env:"CONNECTION_POOL_SIZE" envDefault:"5"`
-	HeartBeatInterval  int              `env:"HEARTBEAT_INTERVAL" envDefault:"10"`
+	HeartBeatInterval  int              `env:"HEARTBEAT_INTERVAL" envDefault:"10"` //in seconds
+	ConnectionTimeout  int              `env:"CONNECTION_TIMEOUT" envDefault:"5"`  //in seconds
 }
