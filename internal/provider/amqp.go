@@ -425,7 +425,8 @@ func (ap *amqpProvider) refillConnectionPool() error {
 		}
 		newPool = append(newPool, conn)
 		// optional jitter to reduce RabbitMQ load
-		time.Sleep(time.Duration(rand.Intn(15)+5) * time.Millisecond)
+		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+		time.Sleep(time.Duration(rnd.Intn(15)+5) * time.Millisecond)
 	}
 
 	ap.ConnectionPool = newPool
