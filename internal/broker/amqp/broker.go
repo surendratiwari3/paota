@@ -326,9 +326,13 @@ func (b *AMQPBroker) StartConsumer(ctx context.Context, workerGroup workergroup.
 	amqpErrorChannel := b.amqpErrorChannel
 	connClosed := conn.NotifyClose(make(chan *amqp.Error, 1))
 	chClosed := channel.NotifyClose(make(chan *amqp.Error, 1))
+	cancelled := channel.NotifyCancel(make(chan string, 1))
 
 	for {
 		select {
+		case tag := <-cancelled:
+        	logger.ApplicationLogger.Error("RabbitMQ cancelled the consumer, exit")
+        	return fmt.Errorf("consumer cancelled by broker: %s", tag)
 		case amqpErr := <-amqpErrorChannel:
 			logger.ApplicationLogger.Error("error in consumer, exit", amqpErr)
 			return amqpErr
