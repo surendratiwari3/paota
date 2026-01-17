@@ -17,12 +17,13 @@ type ConfigProvider interface {
 
 // Config holds all configuration for Paota
 type Config struct {
-	Broker         string         `env:"BROKER" envDefault:"amqp" validate:"required,oneof=amqp"` //allowed amqp
-	Store          string         `env:"STORE"`
-	TaskQueueName  string         `env:"QUEUE_NAME" envDefault:"paota_tasks" validate:"required"`
-	StoreQueueName string         `env:"STORE_QUEUE_NAME"`
-	AMQP           *AMQPConfig    `envPrefix:"AMQP_"`
-	MongoDB        *MongoDBConfig `envPrefix:"MONGO_"`
+	Broker                   string         `env:"BROKER" envDefault:"amqp" validate:"required,oneof=amqp"` //allowed amqp
+	Store                    string         `env:"STORE"`
+	MaxTaskExecutionDuration int            `env:"MAX_TASK_EXEC_DURATION" envDefault:"10"`
+	TaskQueueName            string         `env:"QUEUE_NAME" envDefault:"paota_tasks" validate:"required"`
+	StoreQueueName           string         `env:"STORE_QUEUE_NAME"`
+	AMQP                     *AMQPConfig    `envPrefix:"AMQP_"`
+	MongoDB                  *MongoDBConfig `envPrefix:"MONGO_"`
 }
 
 type configProvider struct {
@@ -56,6 +57,9 @@ func (cp *configProvider) ReadFromEnv() error {
 func (cp *configProvider) SetApplicationConfig(config Config) error {
 	if err := cp.ValidateConfig(config); err != nil {
 		return err
+	}
+	if config.MaxTaskExecutionDuration == 0 {
+		config.MaxTaskExecutionDuration = 10
 	}
 	cp.applicationConfig = config
 	return nil

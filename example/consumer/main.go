@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"github.com/sirupsen/logrus"
 	"github.com/surendratiwari3/paota/config"
 	"github.com/surendratiwari3/paota/schema"
 	"github.com/surendratiwari3/paota/workerpool"
+	"time"
 	//"github.com/surendratiwari3/paota/example/task"
 	"github.com/surendratiwari3/paota/logger"
 	"os"
@@ -28,6 +28,7 @@ func main() {
 		Broker: "amqp",
 		//Store:         "null",
 		TaskQueueName: "paota_task_queue",
+		//MaxTaskExecutionDuration: 10,
 		AMQP: &config.AMQPConfig{
 			Url:                "amqp://localhost:5672/",
 			Exchange:           "paota_task_exchange",
@@ -114,6 +115,7 @@ func (wp printWorker) Publish() {
 
 func (wp printWorker) Print(arg *schema.Signature) error {
 	logger.ApplicationLogger.Info("success", arg.RawArgs)
+	time.Sleep(20 * time.Second)
 	//wp.Publish()
-	return errors.ErrUnsupported
+	return nil
 }

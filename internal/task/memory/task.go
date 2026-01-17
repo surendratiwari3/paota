@@ -129,22 +129,53 @@ func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
 }
 
 func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signature *schema.Signature) error {
+
 	multiple := false
 	requeue := false
 
-	// Step 1: Timeout check
+	maxExec := time.Duration(r.configProvider.GetConfig().MaxTaskExecutionDuration) * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), maxExec)
+	defer cancel()
+
+	done := make(chan error, 1)
+
+	// Safety: never let a task panic kill the consumer goroutine
+	defer func() {
+		if rec := recover(); rec != nil {
+			logger.ApplicationLogger.Errorf(
+				"task panic uuid=%s name=%s err=%v",
+				signature.UUID,
+				signature.Name,
+				rec,
+			)
+
+			// panic = retry if possible
+			if retryErr := r.retryTask(signature); retryErr != nil {
+				_ = amqpJob.Nack(false, true)
+				return
+			}
+			_ = amqpJob.Ack(false)
+		}
+	}()
+
+	// Step 1: START-time timeout (queue wait)
 	if r.checkTaskTimeout(signature) {
-		logger.ApplicationLogger.Warnf("Task %s timed out, pushing to timeout queue", signature.UUID)
+		logger.ApplicationLogger.Warnf(
+			"Task %s exceeded start timeout, pushing to timeout queue",
+			signature.UUID,
+		)
+
 		if err := r.pushToTimeoutAmqpQueue(signature); err == nil {
-			_ = amqpJob.Nack(false, false)
+			_ = amqpJob.Ack(false)
 			return nil
 		}
-		logger.ApplicationLogger.Error("Task is not timeout and push to timeout queue failed")
+
 		_ = amqpJob.Nack(false, true)
 		return nil
 	}
 
-	// Step 2: Validate task handler
+	// Step 2: Get task
 	registeredTaskFunc, err := r.GetRegisteredTask(signature.Name)
 	if err != nil || registeredTaskFunc == nil {
 		logger.ApplicationLogger.Error("Task is not registered or invalid")
@@ -152,7 +183,6 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 		return appError.ErrTaskMustBeFunc
 	}
 
-	// Step 3: Type assertion and execution
 	taskFunc, ok := registeredTaskFunc.(func(*schema.Signature) error)
 	if !ok {
 		logger.ApplicationLogger.Error("Invalid task function type")
@@ -160,19 +190,49 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 		return appError.ErrTaskMustBeFunc
 	}
 
-	if err := taskFunc(signature); err != nil {
-		// Retry path
+	// Step 3: Execute task in goroutine (IMPORTANT)
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				done <- fmt.Errorf("task panic: %v", rec)
+			}
+		}()
+		done <- taskFunc(signature)
+	}()
+
+	// Step 4: Wait for completion OR timeout
+	select {
+	case err := <-done:
+		if err != nil {
+			// Retry on error
+			if retryErr := r.retryTask(signature); retryErr != nil {
+				_ = amqpJob.Nack(false, true)
+				return retryErr
+			}
+			_ = amqpJob.Ack(false)
+			return nil
+		}
+
+		// Success
+		return amqpJob.Ack(false)
+
+	case <-ctx.Done():
+		// Execution timeout reached
+		logger.ApplicationLogger.Warnf(
+			"Task %s exceeded max execution time (%s), retrying",
+			signature.UUID,
+			maxExec,
+		)
+
 		if retryErr := r.retryTask(signature); retryErr != nil {
-			logger.ApplicationLogger.Error("Retry failed, requeuing")
-			requeue = true
-			_ = amqpJob.Nack(multiple, requeue)
+			_ = amqpJob.Nack(false, true)
 			return retryErr
 		}
+
+		// IMPORTANT: ACK original message
 		_ = amqpJob.Ack(false)
 		return nil
 	}
-	// Success
-	return amqpJob.Ack(false)
 }
 
 func (r *DefaultTaskRegistrar) checkTaskTimeout(signature *schema.Signature) bool {
@@ -219,7 +279,6 @@ func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
 	}
 	return r.SendTask(signature)
 }
-
 
 func (r *DefaultTaskRegistrar) getRetryInterval(retryCount int) time.Duration {
 	return time.Duration(utils.Fibonacci(retryCount)) * time.Second
