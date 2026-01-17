@@ -260,6 +260,10 @@ func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
 
 	// Case 1: No retries configured or exhausted
 	if signature.RetryCount < 1 || signature.RetriesDone > (signature.RetryCount-1) {
+		logger.ApplicationLogger.Warnf(
+			"Task %s failed after all retry exhausted, pushing to failed queue",
+			signature.UUID,
+		)
 		if cfg.FailedQueue == "" {
 			// No failed queue configured, just skip
 			// You can either log a warning or return an error here
