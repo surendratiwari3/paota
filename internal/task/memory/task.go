@@ -294,10 +294,8 @@ func (r *DefaultTaskRegistrar) getRetryInterval(retryCount int) time.Duration {
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-
-	// Jitter: add random 0% to 30% extra delay
-	jitter := time.Duration(rand.Int63n(int64(delay / 3)))
-	return delay + jitter
+	
+	return delay
 }
 
 func (r *DefaultTaskRegistrar) SendTask(signature *schema.Signature) error {
