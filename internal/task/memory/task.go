@@ -16,6 +16,7 @@ import (
 	"github.com/surendratiwari3/paota/schema"
 	appError "github.com/surendratiwari3/paota/schema/errors"
 	"sync"
+	"math/rand"
 	"time"
 )
 
@@ -285,7 +286,18 @@ func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
 }
 
 func (r *DefaultTaskRegistrar) getRetryInterval(retryCount int) time.Duration {
-	return time.Duration(utils.Fibonacci(retryCount)) * time.Second
+	// Base Fibonacci delay
+	delay := time.Duration(utils.Fibonacci(retryCount)) * time.Second
+
+	// TODO max cap move to config
+	maxDelay := 10 * time.Second
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	// Jitter: add random 0% to 30% extra delay
+	jitter := time.Duration(rand.Int63n(int64(delay / 3)))
+	return delay + jitter
 }
 
 func (r *DefaultTaskRegistrar) SendTask(signature *schema.Signature) error {
