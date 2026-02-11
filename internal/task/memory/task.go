@@ -16,7 +16,6 @@ import (
 	"github.com/surendratiwari3/paota/schema"
 	appError "github.com/surendratiwari3/paota/schema/errors"
 	"sync"
-	"math/rand"
 	"time"
 )
 
