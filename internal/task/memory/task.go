@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/surendratiwari3/paota/internal/broker"
@@ -15,13 +19,22 @@ import (
 	"github.com/surendratiwari3/paota/logger"
 	"github.com/surendratiwari3/paota/schema"
 	appError "github.com/surendratiwari3/paota/schema/errors"
-	"sync"
-	"time"
 )
 
+// defaultMaxTaskExecutionDuration is used when the configuration does not
+// specify one. Without this fallback a zero value produced an already-expired
+// context and every task was reported as timed out.
+const defaultMaxTaskExecutionDuration = 10 * time.Second
+
+// maxRetryInterval caps the Fibonacci backoff between retries.
+// TODO max cap move to config
+const maxRetryInterval = 10 * time.Second
+
 type DefaultTaskRegistrar struct {
-	registeredTasks      *sync.Map
-	registeredTasksCount uint
+	registeredTasks *sync.Map
+	// registeredTasksCount is read from other goroutines during shutdown, so it
+	// is accessed atomically rather than as a plain uint.
+	registeredTasksCount atomic.Uint64
 	broker               broker.Broker
 	configProvider       config.ConfigProvider
 }
@@ -43,8 +56,11 @@ func (r *DefaultTaskRegistrar) RegisterTasks(namedTaskFuncs map[string]interface
 	}
 
 	for k, v := range namedTaskFuncs {
-		r.registeredTasksCount = r.registeredTasksCount + 1
-		r.registeredTasks.Store(k, v)
+		// Only count a name the first time it is seen; re-registering a task
+		// used to inflate the count forever.
+		if _, loaded := r.registeredTasks.Swap(k, v); !loaded {
+			r.registeredTasksCount.Add(1)
+		}
 	}
 	return nil
 }
@@ -69,13 +85,13 @@ func (r *DefaultTaskRegistrar) IsTaskRegistered(name string) bool {
 func (r *DefaultTaskRegistrar) GetRegisteredTask(name string) (interface{}, error) {
 	taskFunc, ok := r.registeredTasks.Load(name)
 	if !ok {
-		return nil, fmt.Errorf("Task not registered error: %s", name)
+		return nil, fmt.Errorf("task not registered error: %s", name)
 	}
 	return taskFunc, nil
 }
 
 func (r *DefaultTaskRegistrar) GetRegisteredTaskCount() uint {
-	return r.registeredTasksCount
+	return uint(r.registeredTasksCount.Load())
 }
 
 func (r *DefaultTaskRegistrar) Processor(job interface{}) error {
@@ -89,6 +105,34 @@ func (r *DefaultTaskRegistrar) Processor(job interface{}) error {
 		logger.ApplicationLogger.Error("Unsupported job type", j)
 	}
 	return nil
+}
+
+// getConfig returns the active configuration, never nil.
+func (r *DefaultTaskRegistrar) getConfig() *config.Config {
+	if r.configProvider == nil {
+		return &config.Config{}
+	}
+	cfg := r.configProvider.GetConfig()
+	if cfg == nil {
+		return &config.Config{}
+	}
+	return cfg
+}
+
+// getAMQPConfig returns the AMQP configuration, never nil, so the retry and
+// timeout paths cannot panic on a partially configured worker.
+func (r *DefaultTaskRegistrar) getAMQPConfig() *config.AMQPConfig {
+	if amqpCfg := r.getConfig().AMQP; amqpCfg != nil {
+		return amqpCfg
+	}
+	return &config.AMQPConfig{}
+}
+
+func (r *DefaultTaskRegistrar) maxTaskExecutionDuration() time.Duration {
+	if secs := r.getConfig().MaxTaskExecutionDuration; secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	return defaultMaxTaskExecutionDuration
 }
 
 func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
@@ -125,26 +169,34 @@ func (r *DefaultTaskRegistrar) amqpMsgProcessor(job interface{}) error {
 		}
 	}
 
+	if signature == nil || signature.Name == "" {
+		logger.ApplicationLogger.Error("message carries no task name, dropping")
+		_ = amqpJob.Nack(false, false)
+		return appError.ErrTaskNotRegistered
+	}
+
 	return r.amqpProcessSignature(amqpJob, signature)
 }
 
-func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signature *schema.Signature) error {
+func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signature *schema.Signature) (err error) {
 
 	multiple := false
 	requeue := false
 
-	maxExec := time.Duration(r.configProvider.GetConfig().MaxTaskExecutionDuration) * time.Second
+	maxExec := r.maxTaskExecutionDuration()
 
 	ctx, cancel := context.WithTimeout(context.Background(), maxExec)
 	defer cancel()
 
 	done := make(chan error, 1)
 
-	// Safety: never let a task panic kill the consumer goroutine
+	// Safety net: a panic raised by this function itself (not by the task,
+	// which runs in its own goroutine below) must not leave the message
+	// unacknowledged and the worker dead.
 	defer func() {
 		if rec := recover(); rec != nil {
 			logger.ApplicationLogger.Errorf(
-				"task panic uuid=%s name=%s err=%v",
+				"panic while processing task uuid=%s name=%s err=%v",
 				signature.UUID,
 				signature.Name,
 				rec,
@@ -153,9 +205,11 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 			// panic = retry if possible
 			if retryErr := r.retryTask(signature); retryErr != nil {
 				_ = amqpJob.Nack(false, true)
+				err = fmt.Errorf("panic while processing task: %v", rec)
 				return
 			}
 			_ = amqpJob.Ack(false)
+			err = fmt.Errorf("panic while processing task: %v", rec)
 		}
 	}()
 
@@ -171,6 +225,7 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 			return nil
 		}
 
+		// Could not park the task: requeue it so it is not lost.
 		_ = amqpJob.Nack(false, true)
 		return nil
 	}
@@ -178,9 +233,7 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 	// Step 2: Get task
 	registeredTaskFunc, err := r.GetRegisteredTask(signature.Name)
 	if err != nil || registeredTaskFunc == nil {
-		logger.ApplicationLogger.Error("Task is not registered or invalid")
-		_ = amqpJob.Nack(multiple, requeue)
-		return appError.ErrTaskMustBeFunc
+		return r.handleUnregisteredTask(amqpJob, signature)
 	}
 
 	taskFunc, ok := registeredTaskFunc.(func(*schema.Signature) error)
@@ -204,6 +257,7 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 	select {
 	case err := <-done:
 		if err != nil {
+			logger.ApplicationLogger.Warnf("Task %s failed: %v", signature.UUID, err)
 			// Retry on error
 			if retryErr := r.retryTask(signature); retryErr != nil {
 				_ = amqpJob.Nack(false, true)
@@ -235,6 +289,35 @@ func (r *DefaultTaskRegistrar) amqpProcessSignature(amqpJob amqp.Delivery, signa
 	}
 }
 
+// handleUnregisteredTask decides what to do with a message whose task name this
+// worker does not know about. Dropping it outright (the previous behaviour)
+// silently lost work whenever a message reached a worker that had not
+// registered that task yet — for example during a rolling deploy.
+func (r *DefaultTaskRegistrar) handleUnregisteredTask(amqpJob amqp.Delivery, signature *schema.Signature) error {
+	if signature.IgnoreWhenTaskNotRegistered {
+		logger.ApplicationLogger.Warnf("Task %s is not registered, ignoring as requested", signature.Name)
+		_ = amqpJob.Ack(false)
+		return appError.ErrTaskNotRegistered
+	}
+
+	if failedQueue := r.getAMQPConfig().FailedQueue; failedQueue != "" {
+		logger.ApplicationLogger.Errorf("Task %s is not registered, parking it in %s", signature.Name, failedQueue)
+		parked := *signature
+		parked.RoutingKey = failedQueue
+		if err := r.SendTask(&parked); err == nil {
+			_ = amqpJob.Ack(false)
+			return appError.ErrTaskNotRegistered
+		}
+		logger.ApplicationLogger.Error("failed to park unregistered task, requeueing")
+		_ = amqpJob.Nack(false, true)
+		return appError.ErrTaskNotRegistered
+	}
+
+	logger.ApplicationLogger.Errorf("Task %s is not registered and no failed queue is configured, dropping", signature.Name)
+	_ = amqpJob.Nack(false, false)
+	return appError.ErrTaskNotRegistered
+}
+
 func (r *DefaultTaskRegistrar) checkTaskTimeout(signature *schema.Signature) bool {
 	if signature.TaskTimeOut == 0 || signature.CreatedAt == nil {
 		return false
@@ -245,18 +328,21 @@ func (r *DefaultTaskRegistrar) checkTaskTimeout(signature *schema.Signature) boo
 }
 
 func (r *DefaultTaskRegistrar) pushToTimeoutAmqpQueue(signature *schema.Signature) error {
-	tq := r.configProvider.GetConfig().AMQP.TimeoutQueue
+	tq := r.getAMQPConfig().TimeoutQueue
 	if tq == "" {
 		// nothing to do if timeout queue not configured
 		return nil
 	}
 	signature.TaskTimeOut = 0 //this will help to ensure task should not get timeout while processing it from timeout queue
 	signature.RoutingKey = tq
+	// A parked task must not inherit a stale ETA, which would have the broker
+	// hold it in the delay queue instead of the timeout queue.
+	signature.ETA = nil
 	return r.SendTask(signature)
 }
 
 func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
-	cfg := r.configProvider.GetConfig().AMQP
+	cfg := r.getAMQPConfig()
 
 	// Case 1: No retries configured or exhausted
 	if signature.RetryCount < 1 || signature.RetriesDone > (signature.RetryCount-1) {
@@ -270,31 +356,39 @@ func (r *DefaultTaskRegistrar) retryTask(signature *schema.Signature) error {
 			return nil
 		}
 		signature.RoutingKey = cfg.FailedQueue
+		signature.ETA = nil
 		return r.SendTask(signature)
 	}
 
 	// Case 2: Retry allowed
 	retryInterval := r.getRetryInterval(signature.RetriesDone + 1)
-	if retryInterval > 0 {
-		signature.RetriesDone++
+	signature.RetriesDone++
+	if retryInterval > 0 && cfg.DelayedQueue != "" {
 		signature.RoutingKey = cfg.DelayedQueue
 		eta := time.Now().UTC().Add(retryInterval)
 		signature.ETA = &eta
+	} else {
+		// Without a delay queue the task goes straight back to its own queue;
+		// keeping a stale ETA here would have it published with an expiration.
+		signature.ETA = nil
 	}
 	return r.SendTask(signature)
 }
 
 func (r *DefaultTaskRegistrar) getRetryInterval(retryCount int) time.Duration {
-	// Base Fibonacci delay
-	delay := time.Duration(utils.Fibonacci(retryCount)) * time.Second
-
-	// TODO max cap move to config
-	maxDelay := 10 * time.Second
-	if delay > maxDelay {
-		delay = maxDelay
+	// Base Fibonacci delay, in seconds.
+	//
+	// The cap is applied to the number of seconds rather than to the resulting
+	// Duration: Fibonacci(60) seconds does not fit in an int64 of nanoseconds,
+	// so converting first overflowed into a large negative delay that skipped
+	// the cap entirely and published the retry with no backoff at all.
+	seconds := utils.Fibonacci(retryCount)
+	maxSeconds := int(maxRetryInterval / time.Second)
+	if seconds < 0 || seconds > maxSeconds {
+		return maxRetryInterval
 	}
-	
-	return delay
+
+	return time.Duration(seconds) * time.Second
 }
 
 func (r *DefaultTaskRegistrar) SendTask(signature *schema.Signature) error {
@@ -302,6 +396,13 @@ func (r *DefaultTaskRegistrar) SendTask(signature *schema.Signature) error {
 }
 
 func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signature *schema.Signature) error {
+	if signature == nil {
+		return appError.ErrEmptyMessage
+	}
+	if r.broker == nil {
+		return appError.ErrUnsupportedBroker
+	}
+
 	// Auto generate a UUID if not set already
 	if signature.UUID == "" {
 		taskID := uuid.New().String()
@@ -314,7 +415,7 @@ func (r *DefaultTaskRegistrar) SendTaskWithContext(ctx context.Context, signatur
 	}
 
 	if err := r.broker.Publish(ctx, signature); err != nil {
-		return fmt.Errorf("Publish message error: %s", err)
+		return fmt.Errorf("publish message error: %w", err)
 	}
 	return nil
 }

@@ -96,8 +96,9 @@ func TestWorkerPool_Start(t *testing.T) {
 	mockBroker.On("StartConsumer", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("start consumer failed"))
 	mockBroker.On("StopConsumer").Return()
 
+	// Stop no longer short-circuits on the registered task count: a publisher
+	// only pool must shut down cleanly too.
 	mockTaskReg := task.NewMockTaskRegistrarInterface(t)
-	mockTaskReg.On("GetRegisteredTaskCount").Return(uint(10))
 
 	mockFactoryStart := new(factory.MockIFactory)
 	mockFactoryStart.On("CreateBroker", mock.Anything).Return(mockBroker, nil)
@@ -114,12 +115,21 @@ func TestWorkerPool_Start(t *testing.T) {
 		t.Error("Broker not created correctly", err)
 	}
 
+	// Start runs on its own goroutine, so its result travels back over a
+	// channel: sharing the err variable was a data race.
+	startErr := make(chan error, 1)
 	go func() {
-		err = wp.Start()
+		startErr <- wp.Start()
 	}()
 	time.Sleep(100 * time.Millisecond)
 	wp.Stop()
-	assert.Nil(t, err)
+
+	select {
+	case err := <-startErr:
+		assert.Nil(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after Stop")
+	}
 }
 
 func TestMain(m *testing.M) {

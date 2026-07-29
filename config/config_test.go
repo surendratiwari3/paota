@@ -9,6 +9,15 @@ import (
 func TestReadFromEnv(t *testing.T) {
 	// Set environment variables for testing
 	os.Setenv("PAOTA_BROKER", "amqp")
+	// The AMQP block is now actually parsed from the environment, so the
+	// fields it marks as required have to be present.
+	os.Setenv("PAOTA_AMQP_URL", "amqp://guest:guest@localhost:5672/")
+	os.Setenv("PAOTA_AMQP_PREFETCH_COUNT", "10")
+	defer func() {
+		os.Unsetenv("PAOTA_BROKER")
+		os.Unsetenv("PAOTA_AMQP_URL")
+		os.Unsetenv("PAOTA_AMQP_PREFETCH_COUNT")
+	}()
 
 	// Test ReadFromEnv function
 	err := GetConfigProvider().ReadFromEnv()
@@ -17,6 +26,22 @@ func TestReadFromEnv(t *testing.T) {
 	// Test GetConfig function after ReadFromEnv
 	config := GetConfigProvider().GetConfig()
 	assert.NotNil(t, config)
+	// PAOTA_AMQP_* used to be dropped on the floor entirely.
+	assert.NotNil(t, config.AMQP)
+	assert.Equal(t, "amqp://guest:guest@localhost:5672/", config.AMQP.Url)
+	assert.Equal(t, 10, config.AMQP.PrefetchCount)
+}
+
+func TestReadFromEnvRequiresAmqpUrl(t *testing.T) {
+	os.Setenv("PAOTA_BROKER", "amqp")
+	defer os.Unsetenv("PAOTA_BROKER")
+
+	// Missing AMQP settings must be reported instead of producing a config
+	// whose AMQP section is nil and panics later at connect time.
+	err := NewConfigProvider().ReadFromEnv()
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Url")
 }
 
 func TestGetConfig(t *testing.T) {
@@ -25,6 +50,8 @@ func TestGetConfig(t *testing.T) {
 	os.Setenv("PAOTA_STORE", "mongodb")
 	os.Setenv("PAOTA_QUEUE_NAME", "test_queue")
 	os.Setenv("PAOTA_STORE_QUEUE_NAME", "test_store_queue")
+	os.Setenv("PAOTA_AMQP_URL", "amqp://guest:guest@localhost:5672/")
+	os.Setenv("PAOTA_AMQP_PREFETCH_COUNT", "10")
 
 	// Ensure environment variables are cleaned up after the test
 	defer func() {
@@ -32,6 +59,8 @@ func TestGetConfig(t *testing.T) {
 		os.Unsetenv("PAOTA_STORE")
 		os.Unsetenv("PAOTA_QUEUE_NAME")
 		os.Unsetenv("PAOTA_STORE_QUEUE_NAME")
+		os.Unsetenv("PAOTA_AMQP_URL")
+		os.Unsetenv("PAOTA_AMQP_PREFETCH_COUNT")
 	}()
 
 	err := GetConfigProvider().ReadFromEnv()

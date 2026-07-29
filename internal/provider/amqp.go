@@ -2,14 +2,32 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/surendratiwari3/paota/config"
-	"github.com/surendratiwari3/paota/internal/utils"
-	"github.com/surendratiwari3/paota/schema/errors"
 	"net"
 	"sync"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/surendratiwari3/paota/config"
+	"github.com/surendratiwari3/paota/internal/utils"
+	"github.com/surendratiwari3/paota/logger"
+	appErrors "github.com/surendratiwari3/paota/schema/errors"
+)
+
+const (
+	// defaultPublishConfirmTimeout bounds how long a publisher waits for the
+	// broker to confirm a message before the connection is considered bad.
+	defaultPublishConfirmTimeout = 5 * time.Second
+	// publishAttempts is the number of times AmqpPublishWithConfirm will try a
+	// publish. A pooled connection can be closed by the broker while it sits
+	// idle, and the failure only surfaces when it is next used; retrying with a
+	// freshly dialled connection turns that into a transparent recovery instead
+	// of a lost task.
+	publishAttempts = 3
+	// defaultConnectionPoolSize is used when the configuration does not specify
+	// a pool size, so releases still have a bound to check against.
+	defaultConnectionPoolSize = 1
 )
 
 type AmqpProviderInterface interface {
@@ -32,6 +50,7 @@ type amqpProvider struct {
 	amqpConf         *config.AMQPConfig
 	ConnectionPool   []*amqp.Connection
 	connectionsMutex sync.Mutex
+	closed           bool
 }
 
 func NewAmqpProvider(amqpConfig *config.AMQPConfig) AmqpProviderInterface {
@@ -39,6 +58,10 @@ func NewAmqpProvider(amqpConfig *config.AMQPConfig) AmqpProviderInterface {
 }
 
 func (ap *amqpProvider) CreateAmqpChannel(conn *amqp.Connection, confirm bool) (*amqp.Channel, chan amqp.Confirmation, error) {
+	if conn == nil {
+		return nil, nil, appErrors.ErrInvalidConnectionPool
+	}
+
 	channel, err := conn.Channel()
 	if err != nil {
 		return nil, nil, err
@@ -46,19 +69,33 @@ func (ap *amqpProvider) CreateAmqpChannel(conn *amqp.Connection, confirm bool) (
 
 	if confirm && channel != nil {
 		if err = channel.Confirm(false); err != nil {
+			// Do not leak the channel we just opened.
+			_ = channel.Close()
 			return nil, nil, err
 		}
-		return channel, channel.NotifyPublish(make(chan amqp.Confirmation, 1)), err
+		return channel, channel.NotifyPublish(make(chan amqp.Confirmation, 1)), nil
 	}
 
-	return channel, nil, err
+	return channel, nil, nil
 }
 
 func (ap *amqpProvider) CloseAmqpChannel(channel *amqp.Channel) error {
-	return channel.Close()
+	if channel == nil {
+		return nil
+	}
+	err := channel.Close()
+	// Closing a channel whose connection is already gone is not an error worth
+	// propagating during shutdown.
+	if errors.Is(err, amqp.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 func (ap *amqpProvider) CreateConsumer(channel *amqp.Channel, queueName, consumerTag string) (<-chan amqp.Delivery, error) {
+	if channel == nil {
+		return nil, appErrors.ErrInvalidConnectionPool
+	}
 	return channel.Consume(
 		queueName,   // queue
 		consumerTag, // consumer tag
@@ -106,6 +143,10 @@ func (ap *amqpProvider) QueueExchangeBind(channel *amqp.Channel, queueName strin
 }
 
 func (ap *amqpProvider) AmqpPublish(ctx context.Context, channel *amqp.Channel, routingKey string, amqpMsg amqp.Publishing, exchangeName string) error {
+	if channel == nil {
+		return appErrors.ErrInvalidConnectionPool
+	}
+
 	// Publish the message to the exchange
 	err := channel.PublishWithContext(ctx,
 		exchangeName, // exchange
@@ -118,12 +159,10 @@ func (ap *amqpProvider) AmqpPublish(ctx context.Context, channel *amqp.Channel, 
 	return err
 }
 
+// DiscardConnection closes a connection instead of returning it to the pool.
 func (ap *amqpProvider) DiscardConnection(conn interface{}) error {
-	ap.connectionsMutex.Lock()
-	defer ap.connectionsMutex.Unlock()
-
 	// actually close it
-	if c, ok := conn.(*amqp.Connection); ok {
+	if c, ok := conn.(*amqp.Connection); ok && c != nil {
 		_ = c.Close()
 	}
 
@@ -131,8 +170,38 @@ func (ap *amqpProvider) DiscardConnection(conn interface{}) error {
 	return nil
 }
 
+// AmqpPublishWithConfirm publishes a message and waits for the broker to
+// confirm it. A failed attempt discards the connection and retries on a fresh
+// one, so a publish that races with a broker restart is not silently lost.
 func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey string, amqpMsg amqp.Publishing, exchangeName string) error {
+	var lastErr error
 
+	for attempt := 0; attempt < publishAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			if lastErr != nil {
+				return fmt.Errorf("%w (last publish error: %v)", err, lastErr)
+			}
+			return err
+		}
+
+		if attempt > 0 {
+			// Small backoff so a broker that is still coming back up is not
+			// hammered by every publisher at once.
+			utils.JitterMsecSleep(50*attempt, 150*attempt)
+		}
+
+		err := ap.publishOnce(ctx, routingKey, amqpMsg, exchangeName)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		logger.ApplicationLogger.Warning("publish attempt failed, retrying: ", err)
+	}
+
+	return fmt.Errorf("publish failed after %d attempts: %w", publishAttempts, lastErr)
+}
+
+func (ap *amqpProvider) publishOnce(ctx context.Context, routingKey string, amqpMsg amqp.Publishing, exchangeName string) error {
 	// Get a connection from the pool
 	conn, err := ap.GetAmqpConnection()
 	if err != nil {
@@ -157,7 +226,9 @@ func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey s
 		publishHadError = true
 		return err
 	}
-	defer ap.CloseAmqpChannel(channel)
+	defer func() {
+		_ = ap.CloseAmqpChannel(channel)
+	}()
 
 	// Publish
 	err = channel.PublishWithContext(ctx,
@@ -174,6 +245,9 @@ func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey s
 	}
 
 	// Wait for broker confirm
+	timer := time.NewTimer(ap.publishConfirmTimeout())
+	defer timer.Stop()
+
 	select {
 	case confirmed, ok := <-confirmChan:
 		if !ok {
@@ -189,10 +263,21 @@ func (ap *amqpProvider) AmqpPublishWithConfirm(ctx context.Context, routingKey s
 		// Confirm OK → connection is healthy
 		return nil
 
-	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
+		publishHadError = true
+		return fmt.Errorf("publish confirm aborted: %w", ctx.Err())
+
+	case <-timer.C:
 		publishHadError = true
 		return fmt.Errorf("publish confirm timeout")
 	}
+}
+
+func (ap *amqpProvider) publishConfirmTimeout() time.Duration {
+	if ap.amqpConf != nil && ap.amqpConf.PublishConfirmTimeout > 0 {
+		return time.Duration(ap.amqpConf.PublishConfirmTimeout) * time.Second
+	}
+	return defaultPublishConfirmTimeout
 }
 
 func (ap *amqpProvider) GetAmqpConnection() (*amqp.Connection, error) {
@@ -200,13 +285,22 @@ func (ap *amqpProvider) GetAmqpConnection() (*amqp.Connection, error) {
 	if err != nil {
 		return nil, err
 	}
-	if amqpConnection, ok := amqpConn.(*amqp.Connection); ok {
-		return amqpConnection, nil
+	amqpConnection, ok := amqpConn.(*amqp.Connection)
+	if !ok || amqpConnection == nil {
+		// Returning (nil, nil) here made every caller dereference a nil
+		// connection.
+		return nil, appErrors.ErrInvalidConnectionPool
 	}
-	return nil, nil
+	return amqpConnection, nil
 }
 
 func (ap *amqpProvider) SetChannelQoS(channel *amqp.Channel, prefetchCount int) error {
+	if channel == nil {
+		return appErrors.ErrInvalidConnectionPool
+	}
+	if prefetchCount < 0 {
+		prefetchCount = 0
+	}
 	return channel.Qos(
 		prefetchCount,
 		0,     // prefetch size
@@ -214,31 +308,30 @@ func (ap *amqpProvider) SetChannelQoS(channel *amqp.Channel, prefetchCount int) 
 	)
 }
 
+// CloseConnection closes every pooled connection and marks the provider as
+// closed. It is idempotent and safe to call during shutdown.
 func (ap *amqpProvider) CloseConnection() error {
-	// Implement AMQP connection closing logic
-	return nil
+	ap.connectionsMutex.Lock()
+	pool := ap.ConnectionPool
+	ap.ConnectionPool = nil
+	ap.closed = true
+	ap.connectionsMutex.Unlock()
+
+	var firstErr error
+	for _, conn := range pool {
+		if conn == nil || conn.IsClosed() {
+			continue
+		}
+		if err := conn.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
-/*
 func (ap *amqpProvider) CreateConnection() (*amqp.Connection, error) {
 	if ap.amqpConf == nil {
-		return nil, errors.ErrNilConfig
-	}
-	conn, err := amqp.DialConfig(ap.amqpConf.Url,
-		amqp.Config{
-			Heartbeat: time.Duration(ap.amqpConf.HeartBeatInterval), // Adjust heartbeat interval as needed
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return conn, nil
-}*/
-
-func (ap *amqpProvider) CreateConnection() (*amqp.Connection, error) {
-	if ap.amqpConf == nil {
-		return nil, errors.ErrNilConfig
+		return nil, appErrors.ErrNilConfig
 	}
 
 	// Heartbeat (convert seconds → time.Duration)
@@ -271,12 +364,25 @@ func (ap *amqpProvider) CreateConnection() (*amqp.Connection, error) {
 	return conn, nil
 }
 
+// poolSize returns the configured pool size, defaulting to a single connection
+// when the configuration does not specify one.
+func (ap *amqpProvider) poolSize() int {
+	if ap.amqpConf == nil || ap.amqpConf.ConnectionPoolSize < 1 {
+		return defaultConnectionPoolSize
+	}
+	return ap.amqpConf.ConnectionPoolSize
+}
+
 // CreateConnectionPool initializes the connection pool safely.
 func (ap *amqpProvider) CreateConnectionPool() error {
-	poolSize := ap.amqpConf.ConnectionPoolSize
-	if poolSize < 1 {
-		return errors.ErrInvalidConfig
+	if ap.amqpConf == nil {
+		return appErrors.ErrNilConfig
 	}
+
+	if ap.amqpConf.ConnectionPoolSize < 1 {
+		return appErrors.ErrInvalidConfig
+	}
+	poolSize := ap.poolSize()
 
 	// Allocate pool slice
 	connPool := make([]*amqp.Connection, poolSize)
@@ -286,11 +392,7 @@ func (ap *amqpProvider) CreateConnectionPool() error {
 		newConn, err := ap.CreateConnection()
 		if err != nil {
 			// Cleanup previously created connections
-			for _, c := range connPool {
-				if c != nil && !c.IsClosed() {
-					_ = c.Close()
-				}
-			}
+			closeAll(connPool)
 			return fmt.Errorf("CreateConnectionPool failed: %w", err)
 		}
 
@@ -299,8 +401,18 @@ func (ap *amqpProvider) CreateConnectionPool() error {
 
 	// Lock and assign entire pool at once (atomic)
 	ap.connectionsMutex.Lock()
+	if ap.closed {
+		ap.connectionsMutex.Unlock()
+		closeAll(connPool)
+		return appErrors.ErrConnectionPoolClosed
+	}
+	// Calling CreateConnectionPool twice used to abandon the previous
+	// connections without closing them.
+	previous := ap.ConnectionPool
 	ap.ConnectionPool = connPool
 	ap.connectionsMutex.Unlock()
+
+	closeAll(previous)
 
 	// AFTER pool assignment → start watchers
 	for _, conn := range connPool {
@@ -310,60 +422,75 @@ func (ap *amqpProvider) CreateConnectionPool() error {
 	return nil
 }
 
-func (ap *amqpProvider) watchConnection(conn *amqp.Connection) {
-	go func() {
-		err := <-conn.NotifyClose(make(chan *amqp.Error))
-		if err != nil {
-			ap.replaceDeadConnection(conn)
+func closeAll(conns []*amqp.Connection) {
+	for _, c := range conns {
+		if c != nil && !c.IsClosed() {
+			_ = c.Close()
 		}
+	}
+}
+
+// watchConnection drops a connection from the pool as soon as the broker
+// reports it closed. Replacements are dialled lazily by
+// GetConnectionFromPool, so a broker outage does not turn into a reconnect
+// storm from background goroutines.
+func (ap *amqpProvider) watchConnection(conn *amqp.Connection) {
+	if conn == nil {
+		return
+	}
+	go func() {
+		if err := <-conn.NotifyClose(make(chan *amqp.Error, 1)); err != nil {
+			logger.ApplicationLogger.Warning("amqp connection closed, removing from pool: ", err)
+		}
+		ap.removeConnection(conn)
 	}()
 }
 
-func (ap *amqpProvider) replaceDeadConnection(dead *amqp.Connection) {
+func (ap *amqpProvider) removeConnection(dead *amqp.Connection) {
 	ap.connectionsMutex.Lock()
 	defer ap.connectionsMutex.Unlock()
-	if ap.ConnectionPool == nil {
-		return
-	}
-	for i, c := range ap.ConnectionPool {
-		if c == nil {
-			continue
-		}
-		if c == dead {
-			newConn, err := ap.CreateConnection()
-			if err != nil {
-				// keeping the dead one, will retry on next get
-				return
-			}
 
-			ap.ConnectionPool[i] = newConn
-			ap.watchConnection(newConn)
+	for i, c := range ap.ConnectionPool {
+		if c == dead {
+			ap.ConnectionPool = append(ap.ConnectionPool[:i], ap.ConnectionPool[i+1:]...)
 			return
 		}
 	}
 }
 
-// ReleaseConnectionToPool releases a connection back to the pool
+// ReleaseConnectionToPool releases a connection back to the pool.
+// Dead connections are dropped rather than recycled, and the pool never grows
+// beyond the configured size.
 func (ap *amqpProvider) ReleaseConnectionToPool(conn interface{}) error {
-
-	if amqpConnection, ok := conn.(*amqp.Connection); ok {
-
-		ap.connectionsMutex.Lock()
-		defer ap.connectionsMutex.Unlock()
-
-		// If dead → create new one and add that instead
-		if amqpConnection == nil || amqpConnection.IsClosed() {
-			newConn, err := ap.CreateConnection()
-			if err != nil {
-				return fmt.Errorf("failed to recreate AMQP connection: %w", err)
-			}
-			ap.watchConnection(amqpConnection)
-			ap.ConnectionPool = append(ap.ConnectionPool, newConn)
-			return nil
-		}
-
-		ap.ConnectionPool = append(ap.ConnectionPool, amqpConnection)
+	amqpConnection, ok := conn.(*amqp.Connection)
+	if !ok || amqpConnection == nil {
+		return nil
 	}
+
+	if amqpConnection.IsClosed() {
+		// Nothing to recycle. A replacement is dialled on demand by
+		// GetConnectionFromPool; the old code created one here and then
+		// registered the close-watcher on the *dead* connection, so the
+		// replacement was never monitored.
+		return nil
+	}
+
+	ap.connectionsMutex.Lock()
+	if ap.closed {
+		ap.connectionsMutex.Unlock()
+		_ = amqpConnection.Close()
+		return nil
+	}
+	// Bound the pool: releases used to append unconditionally, so a busy
+	// publisher grew the pool without limit.
+	if len(ap.ConnectionPool) >= ap.poolSize() {
+		ap.connectionsMutex.Unlock()
+		_ = amqpConnection.Close()
+		return nil
+	}
+	ap.ConnectionPool = append(ap.ConnectionPool, amqpConnection)
+	ap.connectionsMutex.Unlock()
+
 	return nil
 }
 
@@ -371,67 +498,39 @@ func (ap *amqpProvider) ReleaseConnectionToPool(conn interface{}) error {
 // It does NOT append it back (ReleaseConnectionToPool will handle that).
 func (ap *amqpProvider) GetConnectionFromPool() (interface{}, error) {
 	ap.connectionsMutex.Lock()
-	defer ap.connectionsMutex.Unlock()
+	if ap.closed {
+		ap.connectionsMutex.Unlock()
+		return nil, appErrors.ErrConnectionPoolClosed
+	}
 
-	if ap.ConnectionPool == nil || len(ap.ConnectionPool) == 0 {
-		if err := ap.refillConnectionPool(); err != nil {
-			return nil, err
+	// Pop the first healthy connection, dropping any that died while idle.
+	for len(ap.ConnectionPool) > 0 {
+		conn := ap.ConnectionPool[0]
+		ap.ConnectionPool = ap.ConnectionPool[1:]
+
+		if conn != nil && !conn.IsClosed() {
+			ap.connectionsMutex.Unlock()
+			return conn, nil
 		}
 	}
+	ap.connectionsMutex.Unlock()
 
-	// Pop first connection
-	amqpConn := ap.ConnectionPool[0]
-	ap.ConnectionPool = ap.ConnectionPool[1:]
-
-	//If connection is closed → create a new one and return it
-	if amqpConn == nil || amqpConn.IsClosed() {
-
-		newAmqpConn, err := ap.CreateConnection()
-		if err != nil {
-			return nil, fmt.Errorf("failed to recreate AMQP connection: %w", err)
-		}
-		ap.watchConnection(newAmqpConn)
-		// DO NOT append here — ReleaseConnectionToPool will manage that
-		return newAmqpConn, nil
+	// Pool is empty (first use, or the broker went away). Dial outside the lock
+	// so a slow or failing dial does not block every other caller.
+	newConn, err := ap.CreateConnection()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AMQP connection: %w", err)
 	}
 
-	// Return healthy connection (not appended)
-	return amqpConn, nil
-}
-
-func (ap *amqpProvider) refillConnectionPool() error {
-	// Create a fresh pool slice
-	poolSize := ap.amqpConf.ConnectionPoolSize
-
-	// Close existing connections (if any)
-	for _, c := range ap.ConnectionPool {
-		if c != nil && !c.IsClosed() {
-			_ = c.Close()
-		}
+	ap.connectionsMutex.Lock()
+	closedNow := ap.closed
+	ap.connectionsMutex.Unlock()
+	if closedNow {
+		_ = newConn.Close()
+		return nil, appErrors.ErrConnectionPoolClosed
 	}
 
-	newPool := make([]*amqp.Connection, 0, poolSize)
-
-	for i := 0; i < poolSize; i++ {
-		conn, err := ap.CreateConnection()
-		if err != nil {
-			// Cleanup previously created connections
-			for _, c := range newPool {
-				if c != nil && !c.IsClosed() {
-					_ = c.Close()
-				}
-			}
-			return fmt.Errorf("failed to refill connection pool: %w", err)
-		}
-		newPool = append(newPool, conn)
-		// optional jitter to reduce RabbitMQ load
-		utils.JitterMsecSleep(5, 20) //milisecond
-	}
-
-	ap.ConnectionPool = newPool
-	// AFTER pool assignment → start watchers
-	for _, conn := range newPool {
-		ap.watchConnection(conn)
-	}
-	return nil
+	ap.watchConnection(newConn)
+	// DO NOT append here — ReleaseConnectionToPool will manage that
+	return newConn, nil
 }

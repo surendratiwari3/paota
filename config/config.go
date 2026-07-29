@@ -43,10 +43,28 @@ func (cp *configProvider) ReadFromEnv() error {
 	envOpts := env.Options{
 		Prefix: "PAOTA_",
 	}
+
+	// The env package only descends into a pointer-to-struct field when it is
+	// already non-nil, so these have to be allocated first. Without this every
+	// PAOTA_AMQP_* and PAOTA_MONGO_* variable was silently ignored and the
+	// worker pool started with no broker configuration at all.
+	if cp.applicationConfig.AMQP == nil {
+		cp.applicationConfig.AMQP = &AMQPConfig{}
+	}
+	if cp.applicationConfig.MongoDB == nil {
+		cp.applicationConfig.MongoDB = &MongoDBConfig{}
+	}
+
 	err := env.ParseWithOptions(&cp.applicationConfig, envOpts)
 	if err != nil {
 		return err
 	}
+
+	// Only keep the store configuration when a store was actually requested.
+	if cp.applicationConfig.Store == "" {
+		cp.applicationConfig.MongoDB = nil
+	}
+
 	if err = cp.ValidateConfig(cp.applicationConfig); err != nil {
 		return err
 	}
