@@ -197,6 +197,37 @@ example/consumer/main.go
 mockery --inpackage --all
 ```
 
+## Testing
+
+### Unit tests
+
+Mocks are gitignored, so generate them before the first run. The suite is run
+with `-race` because the worker pool, the connection pool and the task
+registrar are all shared between goroutines.
+
+```bash
+mockery --inpackage --all && go test -race ./...
+```
+
+### Integration tests
+
+The integration suite runs against a real RabbitMQ and covers reconnection,
+concurrent processing and no message loss across a broker restart. It is behind
+the `integration` build tag, so `go test ./...` stays hermetic.
+
+```bash
+docker run -d --name paota-rabbitmq -p 5672:5672 rabbitmq:3.13-management
+```
+
+```bash
+PAOTA_TEST_RABBITMQ_CONTAINER=paota-rabbitmq go test -tags=integration -timeout=30m ./integration/...
+```
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `PAOTA_TEST_AMQP_URL` | Broker to test against | `amqp://guest:guest@localhost:5672/` |
+| `PAOTA_TEST_RABBITMQ_CONTAINER` | Container name used to stop/restart the broker. The restart and outage tests are skipped when it is unset. | unset |
+
 ## Benchmarks
 
 ### No OPs BenchMark

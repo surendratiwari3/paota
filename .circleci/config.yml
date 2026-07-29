@@ -9,27 +9,74 @@ jobs:
       - run:
           name: Install Mockery
           command: |
-            go install github.com/vektra/mockery/v2@latest
-            export PATH=$PATH:$(go env GOPATH)/bin
-            mockery --version  # Print mockery version for debugging
-            mockery --inpackage --all
-      - run:
-          name: Set GOPATH/bin in PATH
-          command: export PATH=$PATH:$GOPATH/bin
+            # Pinned: `@latest` silently moves to mockery v3, whose CLI no
+            # longer accepts --inpackage --all.
+            go install github.com/vektra/mockery/v2@v2.53.3
+            echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> $BASH_ENV
       - run:
           name: Generate Mocks
           command: mockery --inpackage --all
       - run:
+          name: Check formatting
+          command: |
+            unformatted=$(gofmt -l .)
+            if [ -n "$unformatted" ]; then
+              echo "These files are not gofmt'd:"
+              echo "$unformatted"
+              exit 1
+            fi
+      - run:
+          name: Vet
+          command: go vet ./...
+      - run:
           name: Run Unit Tests
           command: |
-            go test -v -coverprofile=coverage.out ./...
-            go tool cover -html=coverage.out -o coverage.html
-            mv coverage.html /tmp/artifacts
+            mkdir -p /tmp/artifacts
+            # -race catches the shared-state bugs this package is prone to:
+            # the worker pool, the connection pool and the task registrar are
+            # all touched from several goroutines at once.
+            go test -race -v -coverprofile=coverage.out ./...
+            go tool cover -html=coverage.out -o /tmp/artifacts/coverage.html
       - store_artifacts:
           path: /tmp/artifacts
+
+  integration:
+    # The integration tests stop and restart RabbitMQ to prove the reconnect
+    # and no-message-loss behaviour, so they need real control over a
+    # container rather than a CircleCI service image.
+    machine:
+      image: ubuntu-2204:current
+    steps:
+      - checkout
+      - run:
+          name: Install Go
+          command: |
+            curl -sSL https://go.dev/dl/go1.23.4.linux-amd64.tar.gz -o /tmp/go.tar.gz
+            sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tar.gz
+            echo 'export PATH=$PATH:/usr/local/go/bin' >> $BASH_ENV
+      - run:
+          name: Start RabbitMQ
+          command: |
+            docker run -d --name paota-rabbitmq -p 5672:5672 rabbitmq:3.13-management
+            for i in $(seq 1 60); do
+              if docker exec paota-rabbitmq rabbitmq-diagnostics -q ping >/dev/null 2>&1; then
+                echo "RabbitMQ is up"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "RabbitMQ did not start in time"
+            exit 1
+      - run:
+          name: Run Integration Tests
+          command: go test -tags=integration -v -timeout=30m ./integration/...
+          environment:
+            PAOTA_TEST_AMQP_URL: amqp://guest:guest@localhost:5672/
+            PAOTA_TEST_RABBITMQ_CONTAINER: paota-rabbitmq
 
 workflows:
   version: 2
   build:
     jobs:
       - build
+      - integration
